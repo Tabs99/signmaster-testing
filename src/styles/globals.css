@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    @apply min-h-screen min-w-mobile overflow-x-hidden bg-background-page font-sans text-white antialiased;
+    margin: 0;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  input:focus {
+    outline: none;
+  }
+
+  button:disabled {
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .account-shell input:focus,
+  .activation-shell input:focus {
+    outline: none;
+  }
+
+  @media (min-width: 640px) {
+    .activation-subtitle {
+      font-size: 18px;
+    }
+
+    .activation-privacy {
+      font-size: 14px;
+      color: rgb(255 255 255 / 0.72);
+    }
+
+    .activation-footer {
+      margin-top: 4px;
+      font-size: 15px;
+      color: rgb(255 255 255 / 0.68);
+    }
+
+    .activation-footer button {
+      font-size: 15px;
+    }
+
+    .account-subtitle {
+      font-size: 16px;
+    }
+  }
+}
