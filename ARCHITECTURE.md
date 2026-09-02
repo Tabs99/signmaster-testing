@@ -96,7 +96,7 @@ The app helps verified purchasers activate their entitlement, create an account,
 |------|---------|
 | **Vitest** | Unit tests and test runner |
 | **React Testing Library** | Component tests |
-| **Playwright** | End-to-end (E2E) tests *(planned — not yet installed)* |
+| **Playwright** | End-to-end (E2E) tests in `e2e/` — installed and configured; runs locally via `npm run test:e2e` *(not yet in CI)* |
 
 Every new feature or behaviour change must include appropriate automated tests.
 
@@ -137,7 +137,9 @@ signmaster-web-app/
         └── App.test.tsx       # App-level smoke tests
 ```
 
-**Not yet present:** `api/`, `server/`, `e2e/`, `src/lib/`, React Router, Supabase client, Playwright.
+**Also present today:** `api/` (activation verify endpoint), `server/` (Amazon sync, Supabase service-role access, activation verification), `e2e/` (Playwright), and `supabase/` (local schema migrations).
+
+**Not yet present:** `src/lib/`, React Router, Supabase browser client, production cron/job API endpoints.
 
 ### Render flow
 
@@ -323,6 +325,8 @@ SignMaster is **one responsive React web application**. These requirements apply
 
 ## Target folder architecture
 
+Core backend folders (`api/`, `server/`, `e2e/`) now exist. Some endpoints and jobs below remain planned.
+
 This is the intended structure as the application matures:
 
 ```
@@ -342,12 +346,12 @@ signmaster-web-app/
 │
 ├── api/                          # Vercel serverless HTTP endpoints
 │   ├── activation/
-│   │   ├── verify.ts             # POST — check order eligibility
-│   │   └── claim.ts              # POST — atomically claim entitlement
+│   │   ├── verify.ts             # POST — check order eligibility (implemented)
+│   │   └── claim.ts              # POST — atomically claim entitlement *(planned)*
 │   └── jobs/
-│       ├── sync-orders.ts        # Cron — incremental order sync (searchOrders)
-│       ├── sync-returns.ts       # Cron — FBA returns via Reports API
-│       └── reconcile-orders.ts   # Cron — rolling reconciliation safety pass
+│       ├── sync-orders.ts        # Cron — incremental order sync *(planned)*
+│       ├── sync-returns.ts         # Cron — FBA returns via Reports API *(planned)*
+│       └── reconcile-orders.ts     # Cron — rolling reconciliation *(planned)*
 │
 ├── server/                       # Reusable backend-only logic
 │   ├── amazon/                   # SP-API client, token refresh
@@ -370,7 +374,7 @@ signmaster-web-app/
 
 ```
 ✅  src/ → src/lib/api/activationApi.ts → fetch('/api/activation/verify')
-✅  api/activation/verify.ts → server/services/entitlementService.ts
+✅  api/activation/verify.ts → server/services/activationVerification.ts
 ❌  src/ → server/                     (NEVER import server code in frontend)
 ❌  src/ → api/                        (NEVER import API handlers in frontend)
 ```
@@ -467,7 +471,7 @@ Customer creates or signs into Supabase Auth account
 
 | Aspect | Current (prototype) | Target |
 |--------|---------------------|--------|
-| Verification | Simulated delay + localStorage | `POST /api/activation/verify` → Supabase |
+| Verification | Backend: `POST /api/activation/verify` → Supabase. Frontend: still prototype (simulated delay + localStorage) | Frontend calls `/api/activation/verify`; remove postcode field |
 | Input fields | Order ID + postcode | **Order ID only** (postcode removed) |
 | Amazon API | Not used | Never called during activation |
 | Routing | `App.tsx` step state | React Router `/activate` route |
@@ -508,7 +512,7 @@ Amazon data is kept up to date by scheduled server-side jobs, **not** by custome
 
 Implement sync jobs in this order:
 
-1. **`sync-orders`** — primary incremental sync via `searchOrders`
+1. **`sync-orders`** — primary incremental sync via `searchOrders` *(local foundation implemented in `server/`; production cron endpoint not yet deployed)*
 2. **`sync-returns`** — FBA customer returns via Reports API
 3. **`reconcile-orders`** — rolling reconciliation safety pass (not primary sync)
 
@@ -779,7 +783,7 @@ ActivationForm.tsx
 
 Major customer journeys must be checked at **both mobile and desktop viewport sizes**.
 
-When Playwright E2E tests are introduced, initial responsive coverage should include at least:
+When Playwright E2E tests run locally, initial responsive coverage should include at least:
 
 | Viewport | Width | Purpose |
 |----------|-------|---------|
@@ -820,6 +824,38 @@ Initial sensible strategy:
 | `src/features/account/__tests__/CreateAccountScreen.test.tsx` | Account form render, validation, submit |
 | `src/features/account/utils/__tests__/validation.test.ts` | Email / password validation |
 | `src/test/App.test.tsx` | App step routing |
+| `server/**/__tests__/`, `api/**/__tests__/` | Backend services, Amazon sync, activation verification |
+| `e2e/activation-flow.spec.ts` | Playwright activation journey (local) |
+
+---
+
+## CI and development workflow
+
+```
+Feature branch
+    ↓
+Pull Request → main
+    ↓
+GitHub Actions
+    ├── npm ci
+    ├── npm run test:run
+    └── npm run build
+    ↓
+Human review
+    ↓
+Merge to main
+```
+
+### CI rules
+
+- **GitHub Actions** is the CI platform (workflow: `.github/workflows/ci.yml`).
+- CI runs for **pull requests targeting `main`** and **pushes to `main`**.
+- Initial CI does **not** use Amazon SP-API credentials.
+- Initial CI does **not** use production Supabase credentials.
+- Amazon integration scripts (`test:amazon-*`, `sync:amazon`) are **not** run by CI.
+- Production order synchronization is **separate from CI** (scheduled jobs, not PR checks).
+- Playwright E2E can be added to CI later.
+- Local Supabase integration tests can be added to CI later.
 
 ---
 
@@ -959,4 +995,4 @@ sequenceDiagram
 | 2026-09-01 | Initial architecture document on `docs/architecture-foundation` branch |
 | 2026-09-01 | Final corrections: api/ vs server/services/ roles, FBA Returns Reports API flow, reconcile-orders job, cron auth, transactional claim, quantity_returned default |
 | 2026-09-01 | Added responsive design and browser compatibility requirements; extended testing strategy with cross-viewport Playwright coverage |
-| 2026-09-01 | Clean-up: cross-browser testing strategy, app_entitlements FK, order-level retained quantity, responsive numbering, reconciliation_checkpoint |
+| 2026-09-03 | CI workflow documented; corrected stale “not yet present” notes for `api/`, `server/`, `e2e/`, Playwright, Supabase migrations, activation verify, and order-sync foundation |
