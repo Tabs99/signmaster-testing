@@ -43,7 +43,7 @@ export interface NormalizedAmazonOrderItem {
 export interface NormalizedAmazonOrder {
   amazonOrderId: string
   purchaseDate: string | null
-  fulfillmentStatus: string | null
-  lastAmazonUpdate: string | null
+  fulfillmentStatus: string
+  lastAmazonUpdate: string
   items: NormalizedAmazonOrderItem[]
 }

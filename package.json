@@ -12,10 +12,12 @@
     "test:coverage": "vitest run --coverage",
     "test:amazon-auth": "node --env-file=.env.local --import tsx server/scripts/testAmazonAuth.ts",
     "test:amazon-orders": "node --env-file=.env.local --import tsx server/scripts/testAmazonOrders.ts",
+    "test:amazon-supabase": "node --env-file=.env.local --import tsx server/scripts/testAmazonSupabase.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.114.0",
     "lucide-react": "^0.487.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
