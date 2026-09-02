@@ -995,4 +995,5 @@ sequenceDiagram
 | 2026-09-01 | Initial architecture document on `docs/architecture-foundation` branch |
 | 2026-09-01 | Final corrections: api/ vs server/services/ roles, FBA Returns Reports API flow, reconcile-orders job, cron auth, transactional claim, quantity_returned default |
 | 2026-09-01 | Added responsive design and browser compatibility requirements; extended testing strategy with cross-viewport Playwright coverage |
+| 2026-09-01 | Clean-up: cross-browser testing strategy, app_entitlements FK, order-level retained quantity, responsive numbering, reconciliation_checkpoint |
 | 2026-09-03 | CI workflow documented; corrected stale “not yet present” notes for `api/`, `server/`, `e2e/`, Playwright, Supabase migrations, activation verify, and order-sync foundation |
