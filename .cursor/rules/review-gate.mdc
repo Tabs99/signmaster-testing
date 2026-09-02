@@ -1,0 +1,54 @@
+---
+description: Enforce human-review workflow before stopping or committing work
+alwaysApply: true
+---
+
+# Review Gate
+
+Before starting work, read `ARCHITECTURE.md` and follow its conventions, security boundaries, and testing strategy.
+
+## Scope and boundaries
+
+- Keep changes scoped to the task. Do not refactor unrelated files or fix unrelated issues.
+- Do not change product behaviour unless explicitly requested.
+- Never weaken, delete, or bypass existing tests to make work pass.
+- Preserve security boundaries from `ARCHITECTURE.md`:
+  - Never expose server secrets to the browser (Amazon credentials, Supabase service-role key, cron secrets).
+  - Never put server secrets in `VITE_` environment variables.
+  - Keep API calls out of React UI components; use typed client modules in `src/lib/api/`.
+  - Frontend validation is UX only; authoritative business and security validation belongs server-side.
+
+## Git and commit policy
+
+- **Never commit or push** unless the user explicitly asks in the current message.
+- After completing work, **wait for human review** before any commit.
+- Before stopping, always run:
+  - `git status`
+  - `git diff --stat`
+
+## End-of-task report (required)
+
+Every completed task must end with a structured report:
+
+1. **Files changed** — list each file and a one-line reason for the change.
+2. **Dependencies / config / scripts** — list anything added or changed in `package.json`, config files, or scripts.
+3. **Tests** — list commands run and exact results (pass/fail counts, not approximations).
+4. **Coverage** — if coverage was run, report the summary numbers.
+5. **Relevant diffs** — show diffs the reviewer needs to inspect.
+6. **Intentionally unchanged** — call out known issues or gaps you did not touch and why.
+
+## Diff presentation
+
+- Show meaningful source diffs for human review.
+- **Do not dump** large generated files (e.g. `package-lock.json`, `coverage/`, build output). Summarize them instead (e.g. "lockfile updated for X dependency").
+- Prefer `git diff --stat` plus targeted diffs for review-critical files.
+
+## When tests or checks apply
+
+If the task touches code, run the relevant checks before stopping and report exact output:
+
+- `npm run test:run` (or task-specific test command)
+- `npm run build` when build impact is likely
+- Other scripts only when requested or clearly required by the task
+
+Fix only issues caused by the current task. Report pre-existing failures you intentionally did not change.
