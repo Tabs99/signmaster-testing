@@ -20,8 +20,9 @@ Before starting work, read `ARCHITECTURE.md` and follow its conventions, securit
 
 ## Git and commit policy
 
-- **Never commit or push** unless the user explicitly asks in the current message.
-- After completing work, **wait for human review** before any commit.
+- When working interactively/local in Cursor, **never commit or push** unless the user explicitly asks in the current message.
+- When operating as a Cursor Cloud Agent, follow the **Cloud Agent exception** below.
+- After completing interactive/local work, **wait for human review** before any commit.
 - Before stopping, always run:
   - `git status`
   - `git diff --stat`
@@ -52,3 +53,16 @@ If the task touches code, run the relevant checks before stopping and report exa
 - Other scripts only when requested or clearly required by the task
 
 Fix only issues caused by the current task. Report pre-existing failures you intentionally did not change.
+
+## Cloud Agent exception
+
+When operating as a Cursor Cloud Agent:
+
+- Work only on a dedicated task branch.
+- You may commit changes to that task branch after all required checks pass.
+- You may push the task branch and open or update a draft pull request.
+- Never merge a pull request.
+- Never push directly to main.
+- Never modify unrelated work.
+- Human review is required before merge.
+- Report all commits, test results, failures, assumptions, and relevant diffs.
