@@ -11,6 +11,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:amazon-auth": "node --env-file=.env.local --import tsx server/scripts/testAmazonAuth.ts",
+    "test:amazon-orders": "node --env-file=.env.local --import tsx server/scripts/testAmazonOrders.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },
