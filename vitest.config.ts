@@ -39,7 +39,10 @@ export default mergeConfig(
           test: {
             name: 'server',
             environment: 'node',
-            include: ['server/**/*.{test,spec}.{ts,tsx}'],
+            include: [
+              'server/**/*.{test,spec}.{ts,tsx}',
+              'api/**/*.{test,spec}.{ts,tsx}',
+            ],
           },
         },
       ],
