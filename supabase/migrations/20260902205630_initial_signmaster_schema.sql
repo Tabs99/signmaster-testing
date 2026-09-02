@@ -60,3 +60,25 @@ create policy app_entitlements_select_own
   for select
   to authenticated
   using (auth.uid() = user_id);
+
+revoke all privileges on table public.amazon_orders
+  from anon, authenticated, service_role;
+
+revoke all privileges on table public.amazon_order_items
+  from anon, authenticated, service_role;
+
+revoke all privileges on table public.app_entitlements
+  from anon, authenticated, service_role;
+
+revoke all privileges on table public.sync_state
+  from anon, authenticated, service_role;
+
+grant select, insert, update on table public.amazon_orders to service_role;
+
+grant select, insert, update on table public.amazon_order_items to service_role;
+
+grant select, insert, update on table public.sync_state to service_role;
+
+grant select on table public.app_entitlements to authenticated;
+
+grant select, insert, update on table public.app_entitlements to service_role;
