@@ -77,6 +77,8 @@ export function mapItemToRow(
     sku: item.sku,
     quantity_ordered: item.quantityOrdered,
     quantity_fulfilled: item.quantityFulfilled,
+    // TODO(returns-sync): when Returns sync is implemented, do not overwrite an
+    // existing quantity_returned value back to 0 during normal order sync.
     quantity_returned: 0,
   }
 }

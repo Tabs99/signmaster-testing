@@ -13,6 +13,7 @@
     "test:amazon-auth": "node --env-file=.env.local --import tsx server/scripts/testAmazonAuth.ts",
     "test:amazon-orders": "node --env-file=.env.local --import tsx server/scripts/testAmazonOrders.ts",
     "test:amazon-supabase": "node --env-file=.env.local --import tsx server/scripts/testAmazonSupabase.ts",
+    "sync:amazon": "node --env-file=.env.local --import tsx server/scripts/syncAmazon.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },
