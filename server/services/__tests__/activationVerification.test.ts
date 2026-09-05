@@ -329,6 +329,19 @@ describe('activationVerification', () => {
   })
 })
 
+describe('calculateTargetItemTotals', () => {
+  it('clamps retained quantity to zero when returns exceed fulfilled units', () => {
+    expect(
+      calculateTargetItemTotals([
+        createTargetItem({ quantity_fulfilled: 1, quantity_returned: 5 }),
+      ]),
+    ).toEqual({
+      totalFulfilled: 1,
+      totalRetained: 0,
+    })
+  })
+})
+
 describe('isCancelledFulfillmentStatus', () => {
   it('recognises cancelled and canceled spellings case-insensitively', () => {
     expect(isCancelledFulfillmentStatus('CANCELLED')).toBe(true)

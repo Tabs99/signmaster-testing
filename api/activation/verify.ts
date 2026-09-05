@@ -2,7 +2,10 @@ import {
   isValidAmazonOrderId,
   normalizeAmazonOrderId,
 } from '../../server/activation/orderIdValidation.ts'
-import { getSpApiConfig } from '../../server/amazon/spApiConfig.ts'
+import {
+  ActivationConfigError,
+  getActivationTargetAsin,
+} from '../../server/activation/config.ts'
 import {
   ActivationVerificationError,
   verifyActivationEligibility,
@@ -44,7 +47,7 @@ export interface ActivationVerifyHandlerDeps {
 
 const defaultDeps: ActivationVerifyHandlerDeps = {
   createClient: createServiceRoleClientFromEnv,
-  getTargetAsin: () => getSpApiConfig().targetAsin,
+  getTargetAsin: () => getActivationTargetAsin(),
   verifyEligibility: verifyActivationEligibility,
 }
 
@@ -98,6 +101,7 @@ export async function handleActivationVerify(
   } catch (error) {
     if (
       error instanceof ActivationVerificationError ||
+      error instanceof ActivationConfigError ||
       error instanceof Error
     ) {
       res.status(500).json({ status: 'ERROR' })

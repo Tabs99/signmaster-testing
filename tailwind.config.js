@@ -23,6 +23,10 @@ export default {
           DEFAULT: '#5FB783',
           text: '#8FD3AA',
         },
+        info: {
+          DEFAULT: '#5B9BD5',
+          text: '#9CC5EB',
+        },
       },
       fontFamily: {
         sans: [

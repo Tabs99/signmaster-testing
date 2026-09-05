@@ -8,6 +8,7 @@ interface OrderIdFieldProps {
   onChange: (value: string) => void
   onOpenHelp: () => void
   showError: boolean
+  disabled?: boolean
   inputRef?: React.RefObject<HTMLInputElement | null>
   helpButtonRef?: React.RefObject<HTMLButtonElement | null>
   onBlur?: () => void
@@ -18,6 +19,7 @@ export default function OrderIdField({
   onChange,
   onOpenHelp,
   showError,
+  disabled = false,
   inputRef,
   helpButtonRef,
   onBlur,
@@ -58,6 +60,8 @@ export default function OrderIdField({
         autoComplete="off"
         spellCheck={false}
         value={value}
+        disabled={disabled}
+        aria-disabled={disabled}
         aria-invalid={showError && Boolean(errorMessage)}
         aria-describedby={
           [errorMessage ? errorId : null, !errorMessage ? hintId : null]
