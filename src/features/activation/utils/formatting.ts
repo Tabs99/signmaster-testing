@@ -12,12 +12,6 @@ export function formatOrderId(raw: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 10)}-${digits.slice(10)}`
 }
 
-export function normalisePostcode(raw: string): string {
-  const stripped = raw.toUpperCase().replace(/\s+/g, '')
-
-  if (stripped.length >= 5) {
-    return `${stripped.slice(0, -3)} ${stripped.slice(-3)}`
-  }
-
-  return stripped
+export function normalisePastedOrderId(raw: string): string {
+  return formatOrderId(raw.trim())
 }
