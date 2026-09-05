@@ -5,29 +5,17 @@ interface FieldErrorProps {
 
 export default function FieldError({ id, children }: FieldErrorProps) {
   return (
-    <div
+    <p
       id={id}
       role="alert"
       aria-live="assertive"
-      className="mb-3.5 mt-1.5 flex items-start gap-2 text-xs text-error"
+      className="mt-2 flex items-start gap-[7px] text-[12.5px] leading-[1.5] text-error-text"
     >
-      <svg
+      <span
         aria-hidden="true"
-        width="13"
-        height="13"
-        viewBox="0 0 13 13"
-        fill="none"
-        className="mt-0.5 shrink-0"
-      >
-        <circle cx="6.5" cy="6.5" r="5.75" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M6.5 4v3.5M6.5 9.5h.01"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
+        className="mt-[5px] h-2 w-2 shrink-0 rounded-[2px] bg-error"
+      />
       <span>{children}</span>
-    </div>
+    </p>
   )
 }

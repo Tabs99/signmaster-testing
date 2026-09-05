@@ -12,6 +12,7 @@ describe('CreateAccountScreen', () => {
   it('renders all form fields, labels, and CTA button correctly', () => {
     render(<CreateAccountScreen />)
 
+    expect(screen.getByRole('img', { name: 'SignMaster' })).toBeInTheDocument()
     expect(screen.getByText('Purchase verified')).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Create your SignMaster account' }),

@@ -4,35 +4,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: {
-          dark: '#0D1527',
-          card: '#131D31',
-          input: '#1C2942',
-          page: '#07101f',
+        keyline: {
+          page: '#0A121C',
+          pane: '#0C1521',
+          plate: '#111C28',
+          gold: '#E9B23C',
+          'gold-pressed': '#D9A436',
+          'gold-foreground': '#0A121C',
         },
         accent: {
-          yellow: {
-            DEFAULT: '#F59E0B',
-            alt: '#EAB308',
-          },
-          gold: '#f0c04a',
+          gold: '#E9B23C',
         },
-        error: '#ff6b6b',
-        success: '#4ade80',
-      },
-      backgroundImage: {
-        'gradient-page':
-          'linear-gradient(165deg, #0d1b2e 0%, #0a1628 45%, #07101f 100%)',
-        'gradient-cta': 'linear-gradient(135deg, #f5cc5a 0%, #e08c18 100%)',
+        error: {
+          DEFAULT: '#E0776C',
+          text: '#EA9A91',
+        },
+        success: {
+          DEFAULT: '#5FB783',
+          text: '#8FD3AA',
+        },
       },
       fontFamily: {
         sans: [
-          'Inter',
+          'Archivo',
           'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
           'Segoe UI',
           'sans-serif',
+        ],
+        mono: [
+          'IBM Plex Mono',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'monospace',
         ],
       },
       screens: {
@@ -44,6 +50,17 @@ export default {
       },
       minWidth: {
         mobile: '375px',
+      },
+      maxWidth: {
+        activation: '420px',
+      },
+      letterSpacing: {
+        step: '0.16em',
+        field: '0.14em',
+        product: '0.11em',
+      },
+      backgroundImage: {
+        'gradient-cta': 'linear-gradient(135deg, #f5cc5a 0%, #e08c18 100%)',
       },
     },
   },

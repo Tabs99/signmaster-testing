@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useRef, useState } from 'react'
 import PageShell from '../../../components/layout/PageShell'
-import SignMasterLogo from '../../activation/components/SignMasterLogo'
+import BrandLockup from '../../activation/components/BrandLockup'
 import FieldError from '../../activation/components/FieldError'
 import {
   ACCOUNT_STORAGE_KEY,
@@ -215,7 +215,7 @@ export default function CreateAccountScreen({
     return (
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
-          <SignMasterLogo />
+          <BrandLockup variant="desktop" />
           <AccountSuccessCard />
         </div>
       </PageShell>
@@ -225,7 +225,7 @@ export default function CreateAccountScreen({
   return (
     <PageShell>
       <div className="flex w-full max-w-[420px] flex-col items-center">
-        <SignMasterLogo />
+        <BrandLockup variant="desktop" />
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
           <PurchaseVerifiedBadge />

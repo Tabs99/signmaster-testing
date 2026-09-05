@@ -16,16 +16,12 @@
   }
 
   body {
-    @apply min-h-screen min-w-mobile overflow-x-hidden bg-background-page font-sans text-white antialiased;
+    @apply min-h-screen min-w-mobile overflow-x-hidden bg-keyline-page font-sans text-white antialiased;
     margin: 0;
   }
 
   #root {
     @apply min-h-screen;
-  }
-
-  input:focus {
-    outline: none;
   }
 
   button:disabled {
@@ -45,33 +41,52 @@
 }
 
 @layer components {
-  .account-shell input:focus,
-  .activation-shell input:focus {
-    outline: none;
+  .keyline-focus:focus-visible {
+    outline: 2px solid #e9b23c;
+    outline-offset: 2px;
   }
 
-  @media (min-width: 640px) {
-    .activation-subtitle {
-      font-size: 18px;
-    }
+  .keyline-plate {
+    @apply rounded-lg border border-white/[0.14] bg-keyline-plate p-[5px];
+  }
 
-    .activation-privacy {
-      font-size: 14px;
-      color: rgb(255 255 255 / 0.72);
-    }
+  .keyline-plate-inner {
+    @apply rounded-md border border-white/[0.09] p-4;
+  }
 
-    .activation-footer {
-      margin-top: 4px;
-      font-size: 15px;
-      color: rgb(255 255 255 / 0.68);
-    }
+  .keyline-field {
+    @apply flex h-[52px] items-center rounded-md border border-white/20 bg-keyline-pane px-[15px] font-mono text-base tracking-[0.02em] text-white;
+  }
 
-    .activation-footer button {
-      font-size: 15px;
-    }
+  .keyline-field-error {
+    @apply border-error/70;
+  }
 
-    .account-subtitle {
-      font-size: 16px;
-    }
+  .keyline-field-valid {
+    @apply border-white/20;
+  }
+
+  .keyline-cta {
+    @apply flex h-[52px] w-full items-center justify-center rounded-md border-0 font-sans text-[15px] font-bold leading-none transition-[background-color,transform] duration-150;
+  }
+
+  .keyline-cta-enabled {
+    @apply bg-keyline-gold text-keyline-gold-foreground active:scale-[0.99] active:bg-keyline-gold-pressed;
+  }
+
+  .keyline-cta-enabled:hover:not(:disabled) {
+    @apply bg-[#edb945];
+  }
+
+  .keyline-cta-disabled {
+    @apply cursor-not-allowed bg-white/[0.09] text-white/45;
+  }
+
+  .keyline-text-action {
+    @apply inline-flex min-h-11 items-center border-0 bg-transparent p-0 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] transition-opacity hover:opacity-[0.85];
+  }
+
+  .keyline-support-action {
+    @apply inline-flex min-h-11 items-center border-0 bg-transparent px-1 py-2 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] keyline-focus transition-opacity hover:opacity-[0.85];
   }
 }
