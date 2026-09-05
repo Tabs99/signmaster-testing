@@ -87,6 +87,6 @@
   }
 
   .keyline-support-action {
-    @apply inline-flex min-h-11 items-center border-0 border-b border-white/45 bg-transparent p-0 font-sans text-sm font-semibold text-white keyline-focus;
+    @apply inline-flex min-h-11 items-center border-0 bg-transparent px-1 py-2 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] keyline-focus transition-opacity hover:opacity-[0.85];
   }
 }

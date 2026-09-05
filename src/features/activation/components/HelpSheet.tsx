@@ -55,6 +55,7 @@ function resolveInitialOpenSections(
 
 export default function HelpSheet({
   onClose,
+  title,
   initialSection = 0,
   returnFocusRef,
 }: HelpSheetProps) {
@@ -149,7 +150,7 @@ export default function HelpSheet({
             id="help-sheet-title"
             className="text-[19px] font-extrabold leading-[1.2] tracking-[-0.02em] text-white"
           >
-            Finding your Amazon order number
+            {title}
           </h2>
           <button
             ref={closeButtonRef}
@@ -165,38 +166,49 @@ export default function HelpSheet({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 lg:px-6 lg:py-4 [scrollbar-gutter:stable]">
           <div className="flex flex-col gap-2">
             <AccordionSection
-              title="1 · Where do I find my Order ID?"
+              title="Where do I find my Order ID?"
               open={openSections[0]}
               onToggle={() => toggleSection(0)}
             >
-              <p className="text-[13.5px] leading-[1.55] text-white/70">
-                Open your Amazon order confirmation email, or go to{' '}
-                <strong className="font-semibold text-white">Returns &amp; Orders</strong> in the
-                Amazon app or website and pick your SignMaster flashcards.
-              </p>
-              <div className="mt-3 w-[210px] max-w-full rounded-md border border-dashed border-white/20 px-3 py-3 text-center">
+              <div className="space-y-2.5 text-[13.5px] leading-[1.55] text-white/70">
+                <p>
+                  <strong className="font-semibold text-white">Amazon app:</strong> tap your
+                  profile icon, then Your Orders.
+                </p>
+                <p>
+                  <strong className="font-semibold text-white">Amazon website:</strong> select
+                  Returns &amp; Orders.
+                </p>
+                <p>
+                  Open the order containing your SignMaster flashcards and view the order details.
+                  You can also find the order number in your Amazon order confirmation email.
+                </p>
+              </div>
+              <div className="mt-3 max-w-full rounded-md border border-dashed border-white/20 px-3 py-3 text-center">
                 <p className="font-mono text-[15px] font-medium text-keyline-gold">
                   205-1234567-1234567
                 </p>
-                <p className="mt-1 font-mono text-[10px] text-white/45">Looks like this · 3-7-7</p>
+                <p className="mt-1 px-1 font-mono text-[9.5px] leading-snug text-white/45 sm:text-[10px]">
+                  17 digits in 3 groups: 3 digits, 7 digits and 7 digits
+                </p>
               </div>
             </AccordionSection>
 
             <AccordionSection
-              title="2 · It isn't being accepted"
+              title="It isn't being accepted"
               open={openSections[1]}
               onToggle={() => toggleSection(1)}
             >
               <p className="text-[13.5px] leading-[1.55] text-white/70">
-                Use the Amazon Order ID in the 3-7-7 format shown above, not a tracking or
-                invoice number. If you placed your order very recently, it may take a little while
-                to appear in SignMaster. App access becomes available once Amazon marks the order as
-                dispatched. Then try again.
+                Make sure you&apos;re entering the Amazon Order ID, not a tracking or invoice
+                number. If you placed your order recently, it may not be available in SignMaster
+                yet. App access becomes available after Amazon dispatches the order. Please try
+                again after dispatch.
               </p>
             </AccordionSection>
 
             <AccordionSection
-              title="3 · I still need help"
+              title="I still need help"
               open={openSections[2]}
               onToggle={() => toggleSection(2)}
             >

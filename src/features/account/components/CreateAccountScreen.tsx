@@ -215,7 +215,7 @@ export default function CreateAccountScreen({
     return (
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
-          <BrandLockup />
+          <BrandLockup variant="desktop" />
           <AccountSuccessCard />
         </div>
       </PageShell>
@@ -225,7 +225,7 @@ export default function CreateAccountScreen({
   return (
     <PageShell>
       <div className="flex w-full max-w-[420px] flex-col items-center">
-        <BrandLockup />
+        <BrandLockup variant="desktop" />
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
           <PurchaseVerifiedBadge />

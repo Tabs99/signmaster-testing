@@ -20,14 +20,20 @@ export default function ActivationStep1() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpInitialSection, setHelpInitialSection] = useState<HelpSheetSection | null>(0)
+  const [helpTitle, setHelpTitle] = useState('Finding your Amazon order number')
 
   const orderIdValid = isValidOrderId(orderId)
   const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdValid
   const canSubmit = orderIdValid && !isSubmitting
 
-  function openHelp(section: HelpSheetSection | null, returnFocus: HTMLElement | null) {
+  function openHelp(
+    section: HelpSheetSection | null,
+    returnFocus: HTMLElement | null,
+    title: string,
+  ) {
     helpReturnFocusRef.current = returnFocus
     setHelpInitialSection(section)
+    setHelpTitle(title)
     setHelpOpen(true)
   }
 
@@ -58,8 +64,9 @@ export default function ActivationStep1() {
             Unlock your SignMaster app
           </h1>
           <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
-            Enter the Amazon order number for your 101 UK Road Sign Flashcards. App access is
-            included with your pack at no extra cost.
+            Enter the Amazon order number for your{' '}
+            <span className="font-semibold text-white/90">101 UK Road Sign Flashcards</span>. App
+            access is included with your pack at no extra cost.
           </p>
         </header>
 
@@ -72,7 +79,9 @@ export default function ActivationStep1() {
             <OrderIdField
               value={orderId}
               onChange={setOrderId}
-              onOpenHelp={() => openHelp(0, showMeWhereRef.current)}
+              onOpenHelp={() =>
+                openHelp(0, showMeWhereRef.current, 'Finding your Amazon order number')
+              }
               showError={showOrderIdError}
               inputRef={orderIdRef}
               helpButtonRef={showMeWhereRef}
@@ -89,7 +98,7 @@ export default function ActivationStep1() {
 
         <p className="mt-4 text-xs leading-[1.55] text-white/[0.5] max-[667px]:mt-2">
           Your order number is used only to verify your purchase and manage your SignMaster
-          access. Never for marketing.
+          access.
         </p>
 
         <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
@@ -97,8 +106,8 @@ export default function ActivationStep1() {
           <button
             ref={getSupportRef}
             type="button"
-            onClick={() => openHelp(2, getSupportRef.current)}
-            className="keyline-support-action inline-flex min-h-11 px-0 py-2"
+            onClick={() => openHelp(2, getSupportRef.current, 'SignMaster activation help')}
+            className="keyline-support-action"
           >
             Get support
           </button>
@@ -108,6 +117,7 @@ export default function ActivationStep1() {
       {helpOpen ? (
         <HelpSheet
           onClose={() => setHelpOpen(false)}
+          title={helpTitle}
           initialSection={helpInitialSection}
           returnFocusRef={helpReturnFocusRef}
         />

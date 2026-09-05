@@ -28,9 +28,7 @@ export default function OrderIdField({
   const isValid = isValidOrderId(value)
   const errorMessage = showError ? validateOrderId(value) : null
 
-  const counterLabel = isValid
-    ? 'Looks right'
-    : `${digitCount}/17 digits`
+  const counterLabel = isValid ? '17/17 digits' : `${digitCount}/17 digits`
 
   return (
     <div>
@@ -44,12 +42,10 @@ export default function OrderIdField({
           Amazon order number
         </label>
         <span
-          className={`font-mono text-[10.5px] ${
-            isValid ? 'font-medium text-success-text' : 'text-white/40'
-          }`}
+          className="font-mono text-[10.5px] text-white/40"
           aria-live="polite"
         >
-          {isValid ? '✓ Looks right' : counterLabel}
+          {counterLabel}
         </span>
       </div>
 
@@ -76,11 +72,7 @@ export default function OrderIdField({
         }}
         onBlur={onBlur}
         className={`keyline-field keyline-focus w-full ${
-          showError && errorMessage
-            ? 'keyline-field-error'
-            : isValid
-              ? 'keyline-field-valid'
-              : 'border-white/20'
+          showError && errorMessage ? 'keyline-field-error' : 'border-white/20'
         }`}
       />
 
@@ -88,7 +80,7 @@ export default function OrderIdField({
         <FieldError id={errorId}>{errorMessage}</FieldError>
       ) : (
         <p id={hintId} className="mt-2.5 text-[13px] leading-[1.55] text-white/[0.55]">
-          It&apos;s on your Amazon confirmation email, or under Returns&nbsp;&amp;&nbsp;Orders.{' '}
+          Find it in your Amazon confirmation email or order details.{' '}
           <button
             ref={helpButtonRef}
             type="button"

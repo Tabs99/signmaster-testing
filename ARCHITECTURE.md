@@ -857,6 +857,34 @@ Merge to main
 - Playwright E2E can be added to CI later.
 - Local Supabase integration tests can be added to CI later.
 
+### Local development
+
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Frontend only — Vite on `localhost:4200` |
+| `npm run dev:lan` | Frontend only — Vite on `0.0.0.0:4200` for mobile/device testing on the local network |
+| `npm run dev:full` | Full stack — Vercel dev server with API routes on `localhost:4200` |
+| `npm run dev:full:lan` | Full stack — Vercel dev server on `0.0.0.0:4200` for mobile/device API testing |
+
+**Frontend-only mobile testing**
+
+```bash
+npm run dev:lan
+```
+
+- Android Emulator: `http://10.0.2.2:4200`
+- Physical device on the same Wi-Fi: `http://<MAC_LAN_IP>:4200`
+
+Mac Wi-Fi IP: `ipconfig getifaddr en0`
+
+**Full-stack mobile testing** (from Task 2 onward when `/api` routes are needed from devices):
+
+```bash
+npm run dev:full:lan
+```
+
+Use the same emulator/device URLs as above. Do not hardcode a developer machine IP in application code.
+
 ---
 
 ## Development rules for Cursor (AI-assisted changes)

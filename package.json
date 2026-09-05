@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:lan": "vite --host 0.0.0.0",
     "dev:full": "node --env-file=.env.local ./node_modules/vercel/dist/vc.js dev --local --listen 4200 --yes",
+    "dev:full:lan": "node --env-file=.env.local ./node_modules/vercel/dist/vc.js dev --local --listen 0.0.0.0:4200 --yes",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",

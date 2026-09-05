@@ -59,6 +59,9 @@ export default {
         field: '0.14em',
         product: '0.11em',
       },
+      backgroundImage: {
+        'gradient-cta': 'linear-gradient(135deg, #f5cc5a 0%, #e08c18 100%)',
+      },
     },
   },
   plugins: [],

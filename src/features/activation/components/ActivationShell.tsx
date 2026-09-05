@@ -9,12 +9,12 @@ function DesktopBrandPane() {
   return (
     <aside className="hidden lg:flex flex-col justify-center px-11 py-12 xl:px-12">
       <BrandLockup variant="desktop" />
-      <h2 className="mt-8 max-w-[24ch] text-[33px] font-extrabold leading-[1.08] tracking-[-0.026em] text-white">
-        Your cards, now on your phone.
+      <h2 className="mt-8 max-w-[42ch] text-[33px] font-extrabold leading-[1.08] tracking-[-0.026em] text-white">
+        Take your road sign practice further.
       </h2>
-      <p className="mt-3.5 max-w-[42ch] text-[15px] leading-[1.6] text-white/[0.65]">
-        101 UK road signs, practice quizzes and progress tracking — included with the
-        flashcard pack you already own.
+      <p className="mt-3.5 max-w-[56ch] text-[15px] leading-[1.6] text-white/[0.65]">
+        Practise all 101 UK road signs with quizzes and progress tracking, included with your
+        flashcard pack.
       </p>
       <div className="mt-8 flex flex-wrap gap-[30px] border-t border-dashed border-white/15 pt-5">
         {['101 Road Signs', 'Practice Quizzes', 'Progress Saved'].map((item) => (
