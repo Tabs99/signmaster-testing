@@ -10,6 +10,7 @@ import {
 } from '../../activation/components/ActivationContextNotice'
 import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
 import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
+import ActivationClaimResult from '../../activation/components/ActivationClaimResult'
 import FieldError from '../../activation/components/FieldError'
 import { authService } from '../../../lib/auth/authService'
 import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
@@ -114,7 +115,10 @@ export default function SignInScreen({
   ])
 
   const claimReady = resumeState === 'valid_context_confirmed_auth'
-  const claimState = useActivationClaimWhenReady({ ready: claimReady })
+  const { state: claimState, retry: retryClaim } = useActivationClaimWhenReady({
+    ready: claimReady,
+  })
+  const claimActive = claimState.kind !== 'idle'
   const claimOutcome =
     claimState.kind === 'outcome' ? claimState.outcome : undefined
 
@@ -189,7 +193,15 @@ export default function SignInScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          <SignedInCard resumeState={resumeState} claimOutcome={claimOutcome} />
+          {claimActive ? (
+            <ActivationClaimResult
+              claimState={claimState}
+              onRetryClaim={retryClaim}
+              onRestartActivation={onRestartActivation}
+            />
+          ) : (
+            <SignedInCard resumeState={resumeState} claimOutcome={claimOutcome} />
+          )}
         </div>
       </PageShell>
     )

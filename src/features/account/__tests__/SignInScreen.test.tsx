@@ -14,7 +14,7 @@ vi.mock('../../auth/context/AuthProvider', () => ({
 }))
 
 vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
-  useActivationClaimWhenReady: vi.fn(() => ({ kind: 'idle' })),
+  useActivationClaimWhenReady: vi.fn(() => ({ state: { kind: 'idle' }, retry: vi.fn() })),
 }))
 
 import { resolveActivationContext } from '../../../lib/api/activationContextApi'
