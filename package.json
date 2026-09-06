@@ -17,6 +17,9 @@
     "test:amazon-orders": "node --env-file=.env.local --import tsx server/scripts/testAmazonOrders.ts",
     "test:amazon-supabase": "node --env-file=.env.local --import tsx server/scripts/testAmazonSupabase.ts",
     "smoke:activation-verify-local": "node --env-file=.env.local --import tsx server/scripts/smokeActivationVerifyLocal.ts",
+    "seed:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/seedActivationTestFixturesLocal.ts",
+    "verify:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/verifyActivationTestFixturesLocal.ts",
+    "clean:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/cleanActivationTestFixturesLocal.ts",
     "sync:amazon": "node --env-file=.env.local --import tsx server/scripts/syncAmazon.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
