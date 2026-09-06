@@ -87,6 +87,14 @@ export interface ResolveActivationContextOptions {
   touchOnValid?: boolean
 }
 
+export type ActivationContextWithOrderResult =
+  | { status: 'VALID'; amazonOrderId: string }
+  | { status: 'EXPIRED' }
+  | { status: 'NONE' }
+
+export interface ResolveActivationContextWithOrderOptions
+  extends ResolveActivationContextOptions {}
+
 function toIsoTimestamp(date: Date): string {
   return date.toISOString()
 }
@@ -142,13 +150,17 @@ export async function createActivationContext(
   }
 }
 
-export async function resolveActivationContext(
+async function loadActivationContextRow(
   options: ResolveActivationContextOptions,
-): Promise<ActivationContextResolutionStatus> {
+): Promise<
+  | { kind: 'row'; row: ActivationContextRow }
+  | { kind: 'none' }
+  | { kind: 'expired' }
+> {
   const { token } = options
 
   if (!isValidActivationContextTokenFormat(token)) {
-    return 'NONE'
+    return { kind: 'none' }
   }
 
   const tokenHash = hashActivationContextToken(token)
@@ -170,11 +182,11 @@ export async function resolveActivationContext(
   }
 
   if (!data) {
-    return 'NONE'
+    return { kind: 'none' }
   }
 
   if (!isActiveContext(data, now)) {
-    return 'EXPIRED'
+    return { kind: 'expired' }
   }
 
   if (options.touchOnValid !== false) {
@@ -193,6 +205,41 @@ export async function resolveActivationContext(
         touchError.code,
       )
     }
+  }
+
+  return { kind: 'row', row: data }
+}
+
+export async function resolveActivationContextWithOrderId(
+  options: ResolveActivationContextWithOrderOptions,
+): Promise<ActivationContextWithOrderResult> {
+  const loaded = await loadActivationContextRow(options)
+
+  if (loaded.kind === 'none') {
+    return { status: 'NONE' }
+  }
+
+  if (loaded.kind === 'expired') {
+    return { status: 'EXPIRED' }
+  }
+
+  return {
+    status: 'VALID',
+    amazonOrderId: loaded.row.amazon_order_id,
+  }
+}
+
+export async function resolveActivationContext(
+  options: ResolveActivationContextOptions,
+): Promise<ActivationContextResolutionStatus> {
+  const loaded = await loadActivationContextRow(options)
+
+  if (loaded.kind === 'none') {
+    return 'NONE'
+  }
+
+  if (loaded.kind === 'expired') {
+    return 'EXPIRED'
   }
 
   return 'VALID'

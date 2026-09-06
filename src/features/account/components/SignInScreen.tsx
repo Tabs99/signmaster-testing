@@ -9,6 +9,7 @@ import {
   ActivationExpiredNotice,
 } from '../../activation/components/ActivationContextNotice'
 import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
+import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
 import FieldError from '../../activation/components/FieldError'
 import { authService } from '../../../lib/auth/authService'
 import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
@@ -24,11 +25,18 @@ import { accountInputClasses, accountLabelClassName } from '../utils/fieldStyles
 import { isValidEmail, isValidPassword } from '../utils/validation'
 import EyeToggle from './EyeToggle'
 
-function SignedInCard({ resumeState }: { resumeState: string | null }) {
+function SignedInCard({
+  resumeState,
+  claimOutcome,
+}: {
+  resumeState: string | null
+  claimOutcome?: string
+}) {
   return (
     <article
       className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl"
       data-resume-state={resumeState ?? undefined}
+      data-claim-outcome={claimOutcome}
     >
       <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
         <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
@@ -105,6 +113,11 @@ export default function SignInScreen({
     user?.emailConfirmed,
   ])
 
+  const claimReady = resumeState === 'valid_context_confirmed_auth'
+  const claimState = useActivationClaimWhenReady({ ready: claimReady })
+  const claimOutcome =
+    claimState.kind === 'outcome' ? claimState.outcome : undefined
+
   function fieldState(field: AccountFieldName): AccountFieldState {
     const isFocused = focusedField === field
 
@@ -176,7 +189,7 @@ export default function SignInScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          <SignedInCard resumeState={resumeState} />
+          <SignedInCard resumeState={resumeState} claimOutcome={claimOutcome} />
         </div>
       </PageShell>
     )

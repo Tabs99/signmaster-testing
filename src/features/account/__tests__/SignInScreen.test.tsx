@@ -13,11 +13,17 @@ vi.mock('../../auth/context/AuthProvider', () => ({
   useAuthContext: vi.fn(),
 }))
 
+vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
+  useActivationClaimWhenReady: vi.fn(() => ({ kind: 'idle' })),
+}))
+
 import { resolveActivationContext } from '../../../lib/api/activationContextApi'
 import { useAuthContext } from '../../auth/context/AuthProvider'
+import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
 
 const mockResolveActivationContext = vi.mocked(resolveActivationContext)
 const mockUseAuthContext = vi.mocked(useAuthContext)
+const mockUseActivationClaimWhenReady = vi.mocked(useActivationClaimWhenReady)
 
 describe('SignInScreen', () => {
   beforeEach(() => {
@@ -168,5 +174,47 @@ describe('SignInScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Create account' }))
 
     expect(onCreateAccount).toHaveBeenCalledOnce()
+  })
+
+  it('requests claim when context and confirmed auth are ready', async () => {
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: true,
+      user: {
+        id: '11111111-1111-4111-8111-111111111111',
+        email: 'alex@example.invalid',
+        emailConfirmed: true,
+      },
+      signOut: vi.fn(),
+    })
+
+    render(<SignInScreen />)
+
+    await waitFor(() => {
+      expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
+        expect.objectContaining({ ready: true }),
+      )
+    })
+  })
+
+  it('does not request claim for unconfirmed authenticated users', async () => {
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: {
+        id: '11111111-1111-4111-8111-111111111111',
+        email: 'alex@example.invalid',
+        emailConfirmed: false,
+      },
+      signOut: vi.fn(),
+    })
+
+    render(<SignInScreen />)
+
+    await waitFor(() => {
+      expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
+        expect.objectContaining({ ready: false }),
+      )
+    })
   })
 })
