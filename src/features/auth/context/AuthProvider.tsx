@@ -17,6 +17,13 @@ export interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
   signOut: () => Promise<void>
+  /**
+   * Re-reads the persisted Supabase session and updates the context user. Used
+   * by the email-confirmation continuation so an "I've confirmed" re-check can
+   * pick up a confirmation completed in another tab of the same browser without
+   * a full reload. Optional so existing test doubles remain valid.
+   */
+  refresh?: () => Promise<AuthUser | null>
 }
 
 export interface AuthProviderProps {
@@ -88,6 +95,18 @@ export function AuthProvider({
     setUser(null)
   }, [authServiceOverride])
 
+  const refresh = useCallback(async (): Promise<AuthUser | null> => {
+    try {
+      const session = await authServiceOverride.getSession()
+      const nextUser = session?.user ?? null
+      setUser(nextUser)
+      return nextUser
+    } catch {
+      setUser(null)
+      return null
+    }
+  }, [authServiceOverride])
+
   const isAuthenticated = Boolean(user?.emailConfirmed)
 
   const value = useMemo<AuthContextValue>(
@@ -96,8 +115,9 @@ export function AuthProvider({
       user,
       isAuthenticated,
       signOut,
+      refresh,
     }),
-    [isAuthenticated, isInitializing, signOut, user],
+    [isAuthenticated, isInitializing, refresh, signOut, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
