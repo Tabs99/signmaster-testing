@@ -467,6 +467,62 @@ Customer creates or signs into Supabase Auth account
 | Transaction steps | Read order state → verify `order_retained_target_quantity > 0` → verify not cancelled → verify unclaimed → insert entitlement |
 | Double-claim protection | `UNIQUE(amazon_order_id)` on `app_entitlements` — final safeguard against concurrent claims |
 
+### Completion / finalisation flow (after successful claim)
+
+`/claim` deliberately leaves the activation context **valid** after `SUCCESS` so a lost claim response can be safely retried (Task 5 idempotency). A separate finalisation step closes the activation lifecycle once the user has reached the success state.
+
+```
+Success claim state reached in the browser
+  → user clicks Continue
+  → frontend calls POST /api/activation/complete   (no body; Bearer token + HttpOnly cookie)
+  → api/activation/complete.ts (thin handler):
+      • require authenticated Supabase session (Bearer token → user_id server-side)
+      • require confirmed email (email_confirmed_at)
+      • read the activation-context token from the HttpOnly cookie ONLY
+      • delegate to server/services/activationCompletionService.ts
+  → activationCompletionService.finalizeActivationCompletion:
+      • resolve context from the cookie token (no expiry touch/refresh)
+      • confirm the entitlement for that order exists, is owned by the user, and is active
+      • invalidate the activation context server-side
+  → on COMPLETED: clear the HttpOnly activation-context cookie (Set-Cookie, Max-Age=0)
+  → return a safe status only: { status: 'COMPLETED' | 'NO_CONTEXT' | 'NOT_ELIGIBLE'
+                                 | 'EMAIL_NOT_CONFIRMED' | 'UNAUTHENTICATED' }
+```
+
+The response body never contains the Amazon Order ID, the context token, or entitlement row IDs. Completion never transfers or recreates entitlements — it only verifies ownership and tidies up the one-time activation context/cookie.
+
+### Completion endpoint security & idempotency rules
+
+| Rule | Detail |
+|------|--------|
+| Authentication required | Bearer token validated server-side; `user_id` derived from the session, never from the browser |
+| Confirmed email required | `email_confirmed_at` must be set, otherwise `EMAIL_NOT_CONFIRMED` |
+| Context source | Activation-context token is read from the HttpOnly cookie only — never from JavaScript or the request body |
+| Ownership check | Entitlement must exist, be owned by the authenticated user, and be `active`, otherwise `NOT_ELIGIBLE` |
+| Server-side cleanup | Context is invalidated server-side; the cookie is cleared via `Set-Cookie` (JavaScript never clears it) |
+| Privacy | Response returns a status enum only — no Order ID, context token, `token_hash`, or entitlement IDs |
+| Claim idempotency preserved | On `NOT_ELIGIBLE` the cookie is left intact so Task 5 claim retry idempotency is unaffected |
+
+**Repeated completion semantics (safe to repeat):**
+
+| Situation | Behaviour |
+|-----------|-----------|
+| First completion — context valid, entitlement owned + active | Invalidate context, clear cookie, return `COMPLETED` |
+| Repeat with the cookie already cleared | No cookie to read → return `NO_CONTEXT` (no side effects); the UI keeps showing the activated state |
+| Repeat with a stale cookie whose context is invalidated/expired | Resolves to `NO_CONTEXT`; the stale cookie is cleared |
+| Cleanup failure (invalidate throws) | Completion errors out with the context/cookie intact so the user can retry — no partial finalisation |
+
+### Cross-device / cross-browser confirmation (Task 6 note)
+
+The activation-context cookie (Task 4) provides continuity only within the **same browser/device**. Email confirmation that completes in a *different* browser (e.g. the customer opens the confirmation email on their phone) will not carry the HttpOnly cookie.
+
+For the Task 6 MVP this is handled without a new cross-device mechanism:
+
+- The confirmation-continuation UI runs in the original browser, which still holds the activation-context cookie. After confirming their email (on any device) the customer returns to the original tab and clicks **"I've confirmed my email"**, which re-checks the auth session and resumes the frozen resolver flow.
+- If the customer instead continues on the confirming device, they land signed-out/without context and are routed through the existing resolver states (`S1A` sign-in / `B10` no-context recovery) — no success is shown without a verified, owned, active entitlement.
+
+A dedicated short-lived, opaque, single-use, server-side continuation reference (carrying **no** Order ID, context token, user-identity authority, or reusable credential) is the intended mechanism if/when true cross-device hand-off is required. It is **deferred** here because implementing it would materially broaden Task 6 beyond the completion/continuation scope, and the resolver already provides a safe recovery path on the confirming device.
+
 ### Current vs target gap
 
 | Aspect | Current (prototype) | Target |
@@ -477,6 +533,7 @@ Customer creates or signs into Supabase Auth account
 | Routing | `App.tsx` step state | React Router `/activate` route |
 | Auth | Not integrated | Supabase Auth |
 | Claim | localStorage flag | `POST /api/activation/claim` → `app_entitlements` |
+| Completion | localStorage `complete` step | `POST /api/activation/complete` → invalidate context + clear cookie |
 
 ---
 
@@ -1025,3 +1082,4 @@ sequenceDiagram
 | 2026-09-01 | Added responsive design and browser compatibility requirements; extended testing strategy with cross-viewport Playwright coverage |
 | 2026-09-01 | Clean-up: cross-browser testing strategy, app_entitlements FK, order-level retained quantity, responsive numbering, reconciliation_checkpoint |
 | 2026-09-03 | CI workflow documented; corrected stale “not yet present” notes for `api/`, `server/`, `e2e/`, Playwright, Supabase migrations, activation verify, and order-sync foundation |
+| 2026-09-06 | Task 6: documented activation completion/finalisation flow (`POST /api/activation/complete`), completion endpoint security & repeat-completion idempotency rules, and the cross-device confirmation note (deferred continuation reference) |
