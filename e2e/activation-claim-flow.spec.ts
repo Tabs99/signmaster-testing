@@ -62,7 +62,7 @@ test.describe('SignMaster activation claim', () => {
     await page.locator('#sign-in-password').fill(AUTH_TEST_PASSWORD)
     await page.getByRole('button', { name: 'Sign in' }).click()
 
-    await expect(page.getByText("You're signed in")).toBeVisible()
+    await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
     await expect(page.locator('[data-claim-outcome="success"]')).toBeVisible()
   })
 
