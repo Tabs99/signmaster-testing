@@ -109,8 +109,8 @@ export function getActivationStatusContent(
         ],
         showOrderId: true,
         primaryLabel: 'Sign in',
-        secondaryLabel: 'Get support',
-        secondaryKind: 'support',
+        secondaryLabel: 'Use another order',
+        secondaryKind: 'use_another_order',
       }
     case 'cancelled':
       return {

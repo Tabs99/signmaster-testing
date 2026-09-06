@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
 const NOT_SHIPPED_FIXTURE_ORDER_ID = '222-2222222-2222222'
@@ -68,7 +69,8 @@ function mockVerifyRoute(
 
 test.describe('SignMaster activation verification', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
+    await mockSupabaseAuthBootstrap(page)
+    await page.goto('/activate')
   })
 
   test('loads the approved Step 1 screen without postcode', async ({ page }) => {

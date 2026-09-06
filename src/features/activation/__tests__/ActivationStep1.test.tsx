@@ -825,22 +825,62 @@ describe('ActivationStep1', () => {
         expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
       })
 
-      it('opens support help from Get support on the already-claimed plate', async () => {
+      it('shows Sign in and Use another order when handlers are wired', async () => {
+        const user = userEvent.setup()
+        const onSignIn = vi.fn()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'ALREADY_CLAIMED',
+        })
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={onSignIn} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        const statusPlate = await screen.findByRole('status')
+        await user.click(within(statusPlate).getByRole('button', { name: 'Sign in' }))
+        expect(onSignIn).toHaveBeenCalledOnce()
+
+        await user.click(within(statusPlate).getByRole('button', { name: 'Use another order' }))
+
+        expect(screen.getByLabelText('Amazon order number')).toHaveValue('')
+        await waitFor(() => {
+          expect(document.activeElement).toBe(screen.getByLabelText('Amazon order number'))
+        })
+      })
+
+      it('returns to entry when Use another order is clicked on the already-claimed plate', async () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ALREADY_CLAIMED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        render(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={() => undefined} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
         const statusPlate = await screen.findByRole('status')
-        await user.click(within(statusPlate).getByRole('button', { name: 'Get support' }))
+        await user.click(within(statusPlate).getByRole('button', { name: 'Use another order' }))
 
-        expect(getHelpDialog(SUPPORT_HELP_DIALOG)).toBeInTheDocument()
-        expectSectionExpanded('I still need help', SUPPORT_HELP_DIALOG)
+        expect(screen.getByLabelText('Amazon order number')).toHaveValue('')
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      })
+
+      it('keeps footer Get support separate from the already-claimed card actions', async () => {
+        const user = userEvent.setup()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'ALREADY_CLAIMED',
+        })
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={() => undefined} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        const statusPlate = await screen.findByRole('status')
+        expect(within(statusPlate).queryByRole('button', { name: 'Get support' })).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Get support' })).toBeInTheDocument()
       })
     })
 

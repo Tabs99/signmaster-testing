@@ -1,12 +1,27 @@
+import type { AuthService } from '../../../lib/auth/authService'
+import type { SignUpResult } from '../../../lib/auth/types'
+
 export interface CreateAccountScreenProps {
-  onComplete?: () => void
+  signUp?: AuthService['signUp']
   onSignIn?: () => void
 }
 
-export const ACCOUNT_STORAGE_KEY = 'signmaster_account_created'
+export interface SignInScreenProps {
+  signIn?: AuthService['signIn']
+  onCreateAccount?: () => void
+}
 
-export type CreateAccountStatus = 'idle' | 'loading' | 'existing-account' | 'done'
+export type CreateAccountStatus =
+  | 'idle'
+  | 'loading'
+  | 'existing-account'
+  | 'email-confirmation'
+  | 'done'
+
+export type SignInStatus = 'idle' | 'loading' | 'done'
 
 export type AccountFieldState = 'default' | 'focused' | 'valid' | 'error'
 
 export type AccountFieldName = 'email' | 'password' | 'confirm'
+
+export type { SignUpResult }
