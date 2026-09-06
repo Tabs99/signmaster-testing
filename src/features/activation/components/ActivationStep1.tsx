@@ -1,5 +1,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import {
+  createActivationContext,
+} from '../../../lib/api/activationContextApi'
+import {
   verifyActivationOrder,
   type ActivationVerifyResult,
 } from '../../../lib/api/activationApi'
@@ -23,6 +26,7 @@ import PrimaryButton from './PrimaryButton'
 
 export default function ActivationStep1({
   verifyOrder = verifyActivationOrder,
+  createContext = createActivationContext,
   onContinueToAccount,
   onSignIn,
 }: ActivationStep1Props = {}) {
@@ -31,6 +35,7 @@ export default function ActivationStep1({
   const getSupportRef = useRef<HTMLButtonElement>(null)
   const helpReturnFocusRef = useRef<HTMLElement | null>(null)
   const verifyInFlightRef = useRef(false)
+  const contextCreateInFlightRef = useRef(false)
 
   const [orderId, setOrderId] = useState('')
   const [fieldTouched, setFieldTouched] = useState(false)
@@ -44,6 +49,7 @@ export default function ActivationStep1({
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpInitialSection, setHelpInitialSection] = useState<HelpSheetSection | null>(0)
   const [helpTitle, setHelpTitle] = useState('Finding your Amazon order number')
+  const [contextCreating, setContextCreating] = useState(false)
 
   const orderIdValid = isValidOrderId(orderId)
   const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdValid
@@ -166,15 +172,40 @@ export default function ActivationStep1({
     returnToEntry({ clearOrderId: true, focusField: true })
   }
 
-  function handleStatusPrimaryAction() {
+  async function persistEligibleContext(currentOrderId: string) {
+    if (contextCreateInFlightRef.current) {
+      return false
+    }
+
+    contextCreateInFlightRef.current = true
+    setContextCreating(true)
+
+    try {
+      const result = await createContext(currentOrderId)
+      return result.kind === 'created'
+    } finally {
+      contextCreateInFlightRef.current = false
+      setContextCreating(false)
+    }
+  }
+
+  async function handleStatusPrimaryAction() {
     if (!resultKind) {
       return
     }
 
     switch (resultKind) {
-      case 'eligible':
+      case 'eligible': {
+        const created = await persistEligibleContext(orderId)
+        if (!created) {
+          setResultKind('service_unavailable')
+          setPresentedResultKind('service_unavailable')
+          return
+        }
+
         onContinueToAccount?.()
         break
+      }
       case 'not_found':
         returnToEntry({ focusField: true })
         break
@@ -234,13 +265,17 @@ export default function ActivationStep1({
     }
 
     const disabled =
-      resultKind === 'rate_limited' &&
-      (rateLimitRetryAt !== null ? !rateLimitRetryReady : true)
+      (resultKind === 'rate_limited' &&
+        (rateLimitRetryAt !== null ? !rateLimitRetryReady : true)) ||
+      (resultKind === 'eligible' && contextCreating)
 
     return {
       label: content.primaryLabel,
-      onClick: handleStatusPrimaryAction,
+      onClick: () => {
+        void handleStatusPrimaryAction()
+      },
       disabled,
+      loading: resultKind === 'eligible' && contextCreating,
     }
   }
 

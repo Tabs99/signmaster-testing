@@ -498,17 +498,19 @@ describe('ActivationStep1', () => {
         ).not.toBeInTheDocument()
       })
 
-      it('shows Continue and calls onContinueToAccount when provided', async () => {
+      it('shows Continue and calls onContinueToAccount when context creation succeeds', async () => {
         const user = userEvent.setup()
         const onContinueToAccount = vi.fn()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
+        const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
 
         render(
           <ActivationStep1
             verifyOrder={verifyOrder}
+            createContext={createContext}
             onContinueToAccount={onContinueToAccount}
           />,
         )
@@ -520,7 +522,79 @@ describe('ActivationStep1', () => {
         })
         await user.click(continueButton)
 
+        expect(createContext).toHaveBeenCalledWith('205-1234567-1234567')
         expect(onContinueToAccount).toHaveBeenCalledTimes(1)
+      })
+
+      it('blocks navigation when context creation fails', async () => {
+        const user = userEvent.setup()
+        const onContinueToAccount = vi.fn()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'ELIGIBLE',
+        })
+        const createContext = vi.fn().mockResolvedValue({ kind: 'service_unavailable' })
+
+        render(
+          <ActivationStep1
+            verifyOrder={verifyOrder}
+            createContext={createContext}
+            onContinueToAccount={onContinueToAccount}
+          />,
+        )
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        const continueButton = await screen.findByRole('button', {
+          name: 'Continue to account setup',
+        })
+        await user.click(continueButton)
+
+        expect(onContinueToAccount).not.toHaveBeenCalled()
+        await waitFor(() => {
+          expect(
+            screen.getByRole('heading', { name: "We can't check your order right now" }),
+          ).toBeInTheDocument()
+        })
+      })
+
+      it('does not create duplicate contexts on repeated Continue clicks', async () => {
+        const user = userEvent.setup()
+        const onContinueToAccount = vi.fn()
+        let resolveCreate:
+          | ((value: { kind: 'created' }) => void)
+          | undefined
+        const createContext = vi.fn(
+          () =>
+            new Promise<{ kind: 'created' }>((resolve) => {
+              resolveCreate = resolve
+            }),
+        )
+
+        render(
+          <ActivationStep1
+            verifyOrder={createVerifyMock({
+              kind: 'business_status',
+              status: 'ELIGIBLE',
+            })}
+            createContext={createContext}
+            onContinueToAccount={onContinueToAccount}
+          />,
+        )
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        const continueButton = await screen.findByRole('button', {
+          name: 'Continue to account setup',
+        })
+        await user.click(continueButton)
+        await user.click(continueButton)
+
+        expect(createContext).toHaveBeenCalledTimes(1)
+        resolveCreate?.({ kind: 'created' })
+        await waitFor(() => {
+          expect(onContinueToAccount).toHaveBeenCalledTimes(1)
+        })
       })
     })
 

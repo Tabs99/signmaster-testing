@@ -4,11 +4,13 @@ import type { SignUpResult } from '../../../lib/auth/types'
 export interface CreateAccountScreenProps {
   signUp?: AuthService['signUp']
   onSignIn?: () => void
+  onRestartActivation?: () => void
 }
 
 export interface SignInScreenProps {
   signIn?: AuthService['signIn']
   onCreateAccount?: () => void
+  onRestartActivation?: () => void
 }
 
 export type CreateAccountStatus =

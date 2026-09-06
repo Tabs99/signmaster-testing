@@ -1,15 +1,47 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SignInScreen from '../components/SignInScreen'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import type { SignInResult } from '../../../lib/auth/types'
 
+vi.mock('../../../lib/api/activationContextApi', () => ({
+  resolveActivationContext: vi.fn(),
+}))
+
+vi.mock('../../auth/context/AuthProvider', () => ({
+  useAuthContext: vi.fn(),
+}))
+
+import { resolveActivationContext } from '../../../lib/api/activationContextApi'
+import { useAuthContext } from '../../auth/context/AuthProvider'
+
+const mockResolveActivationContext = vi.mocked(resolveActivationContext)
+const mockUseAuthContext = vi.mocked(useAuthContext)
+
 describe('SignInScreen', () => {
-  it('renders email, password, and sign-in CTA', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'VALID',
+    })
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+    })
+  })
+
+  it('renders email, password, and sign-in CTA', async () => {
     render(<SignInScreen />)
 
-    expect(screen.getByRole('heading', { name: 'Sign in to SignMaster' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Sign in to SignMaster' }),
+      ).toBeInTheDocument()
+    })
     expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()

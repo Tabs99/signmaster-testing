@@ -1,4 +1,5 @@
 import type { ActivationVerifyResult } from '../../../lib/api/activationApi'
+import type { ActivationContextCreateResult } from '../../../lib/api/activationContextApi'
 
 export type ActivationUiPhase = 'entry' | 'checking' | 'result'
 
@@ -15,6 +16,7 @@ export type ActivationResultKind =
 
 export interface ActivationStep1Props {
   verifyOrder?: (orderId: string) => Promise<ActivationVerifyResult>
+  createContext?: (orderId: string) => Promise<ActivationContextCreateResult>
   onContinueToAccount?: () => void
   onSignIn?: () => void
 }

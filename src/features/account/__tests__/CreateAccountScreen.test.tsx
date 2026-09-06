@@ -5,16 +5,42 @@ import CreateAccountScreen from '../components/CreateAccountScreen'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import type { SignUpResult } from '../types'
 
+vi.mock('../../../lib/api/activationContextApi', () => ({
+  resolveActivationContext: vi.fn(),
+}))
+
+vi.mock('../../auth/context/AuthProvider', () => ({
+  useAuthContext: vi.fn(),
+}))
+
+import { resolveActivationContext } from '../../../lib/api/activationContextApi'
+import { useAuthContext } from '../../auth/context/AuthProvider'
+
+const mockResolveActivationContext = vi.mocked(resolveActivationContext)
+const mockUseAuthContext = vi.mocked(useAuthContext)
+
 describe('CreateAccountScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'VALID',
+    })
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+    })
   })
 
-  it('renders all form fields, labels, and CTA button correctly', () => {
+  it('renders all form fields, labels, and CTA button correctly', async () => {
     render(<CreateAccountScreen />)
 
     expect(screen.getByRole('img', { name: 'SignMaster' })).toBeInTheDocument()
-    expect(screen.getByText('Purchase verified')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('Purchase verified')).toBeInTheDocument()
+    })
     expect(
       screen.getByRole('heading', { name: 'Create your SignMaster account' }),
     ).toBeInTheDocument()
@@ -25,6 +51,33 @@ describe('CreateAccountScreen', () => {
       screen.getByRole('button', { name: 'Create Account & Continue' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+  })
+
+  it('shows missing-context notice when no activation context exists', async () => {
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'NONE',
+    })
+
+    render(<CreateAccountScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-missing-notice')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Purchase verified')).not.toBeInTheDocument()
+  })
+
+  it('shows expired notice for expired activation contexts', async () => {
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'EXPIRED',
+    })
+
+    render(<CreateAccountScreen onRestartActivation={vi.fn()} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-expired-notice')).toBeInTheDocument()
+    })
   })
 
   it('displays validation errors when fields are invalid after blur', async () => {

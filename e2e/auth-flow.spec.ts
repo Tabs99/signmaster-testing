@@ -24,6 +24,30 @@ function mockVerifyRoute(page: Page, status: string) {
   })
 }
 
+function mockActivationContextCreate(page: Page) {
+  return page.route('**/api/activation/context', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'CREATED' }),
+      })
+      return
+    }
+
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'VALID' }),
+      })
+      return
+    }
+
+    await route.continue()
+  })
+}
+
 async function fillValidOrderId(page: Page) {
   await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
 }
@@ -39,6 +63,7 @@ test.describe('SignMaster auth foundation', () => {
 
   test('A5 Continue navigates to create-account', async ({ page }) => {
     await mockVerifyRoute(page, 'ELIGIBLE')
+    await mockActivationContextCreate(page)
     await page.goto('/activate')
     await fillValidOrderId(page)
     await submitOrderCheck(page)

@@ -24,6 +24,7 @@ function AppRoutes() {
         element={
           <CreateAccountScreen
             onSignIn={() => navigate('/sign-in')}
+            onRestartActivation={() => navigate('/activate')}
           />
         }
       />
@@ -32,6 +33,7 @@ function AppRoutes() {
         element={
           <SignInScreen
             onCreateAccount={() => navigate('/create-account')}
+            onRestartActivation={() => navigate('/activate')}
           />
         }
       />
