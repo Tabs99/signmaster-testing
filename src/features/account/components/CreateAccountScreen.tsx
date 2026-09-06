@@ -1,10 +1,18 @@
-import { FormEvent, useCallback, useRef, useState } from 'react'
+import { FormEvent, useCallback, useMemo, useRef, useState } from 'react'
 import PageShell from '../../../components/layout/PageShell'
 import BrandLockup from '../../activation/components/BrandLockup'
+import {
+  ActivationContextMissingNotice,
+  ActivationContextServiceErrorNotice,
+  ActivationExpiredNotice,
+} from '../../activation/components/ActivationContextNotice'
+import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
 import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import { authService } from '../../../lib/auth/authService'
+import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
+import { useAuthContext } from '../../auth/context/AuthProvider'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import {
   type AccountFieldName,
@@ -129,7 +137,15 @@ function ExistingAccountAlert({ onSignIn }: { onSignIn?: () => void }) {
 export default function CreateAccountScreen({
   signUp = authService.signUp.bind(authService),
   onSignIn,
+  onRestartActivation,
 }: CreateAccountScreenProps) {
+  const {
+    status: contextStatus,
+    isLoading: contextLoading,
+    error: contextError,
+    retry: retryContextResolution,
+  } = useActivationContextResolution()
+  const { isAuthenticated, user, isInitializing: authInitializing } = useAuthContext()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
@@ -159,6 +175,33 @@ export default function CreateAccountScreen({
   const showMatchErr = (confirmTouched || submitAttempted) && !matchOk && confirm !== ''
   const showMatchEmpty = submitAttempted && confirm === ''
 
+  const resumeState = useMemo(() => {
+    if (contextLoading || authInitializing || contextError || !contextStatus) {
+      return null
+    }
+
+    return resolveActivationResumeState({
+      contextStatus,
+      auth: {
+        isAuthenticated,
+        isEmailConfirmed: Boolean(user?.emailConfirmed),
+      },
+      intent: 'create_account',
+    })
+  }, [
+    authInitializing,
+    contextError,
+    contextLoading,
+    contextStatus,
+    isAuthenticated,
+    user?.emailConfirmed,
+  ])
+
+  const showVerifiedBadge =
+    resumeState === 'valid_context' ||
+    resumeState === 'valid_context_unconfirmed_auth' ||
+    resumeState === 'valid_context_confirmed_auth'
+
   function fieldState(field: AccountFieldName): AccountFieldState {
     const isFocused = focusedField === field
 
@@ -185,6 +228,11 @@ export default function CreateAccountScreen({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
+
+      if (contextLoading || contextError) {
+        return
+      }
+
       setSubmitAttempted(true)
       setEmailTouched(true)
       setPasswordTouched(true)
@@ -240,11 +288,13 @@ export default function CreateAccountScreen({
         submitInFlightRef.current = false
       }
     },
-    [email, emailOk, matchOk, passwordOk, signUp],
+    [contextError, contextLoading, email, emailOk, matchOk, passwordOk, signUp],
   )
 
   const isLoading = formStatus === 'loading'
-  const canSubmit = emailOk && passwordOk && matchOk && !isLoading
+  const contextResolutionBlocked = contextLoading || contextError
+  const canSubmit =
+    emailOk && passwordOk && matchOk && !isLoading && !contextResolutionBlocked
 
   if (formStatus === 'done') {
     return (
@@ -274,7 +324,20 @@ export default function CreateAccountScreen({
         <BrandLockup variant="desktop" />
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
-          <PurchaseVerifiedBadge />
+          {contextError ? (
+            <ActivationContextServiceErrorNotice
+              onRetry={retryContextResolution}
+              isRetrying={contextLoading}
+            />
+          ) : null}
+          {!contextError && resumeState === 'expired_context' ? (
+            <ActivationExpiredNotice onRestartActivation={onRestartActivation} />
+          ) : null}
+          {!contextError &&
+          (resumeState === 'no_context' || resumeState === 'confirmed_auth_no_context') ? (
+            <ActivationContextMissingNotice />
+          ) : null}
+          {!contextError && showVerifiedBadge ? <PurchaseVerifiedBadge /> : null}
           <h1 className="text-[clamp(20px,4.5vw,28px)] font-extrabold leading-tight tracking-tight text-white">
             Create your SignMaster account
           </h1>
@@ -283,7 +346,10 @@ export default function CreateAccountScreen({
           </p>
         </header>
 
-        <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl">
+        <article
+          className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl"
+          data-resume-state={resumeState ?? undefined}
+        >
           {formStatus === 'existing-account' ? (
             <ExistingAccountAlert onSignIn={onSignIn} />
           ) : null}

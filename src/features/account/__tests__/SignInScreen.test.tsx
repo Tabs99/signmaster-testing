@@ -1,19 +1,92 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SignInScreen from '../components/SignInScreen'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import type { SignInResult } from '../../../lib/auth/types'
 
+vi.mock('../../../lib/api/activationContextApi', () => ({
+  resolveActivationContext: vi.fn(),
+}))
+
+vi.mock('../../auth/context/AuthProvider', () => ({
+  useAuthContext: vi.fn(),
+}))
+
+import { resolveActivationContext } from '../../../lib/api/activationContextApi'
+import { useAuthContext } from '../../auth/context/AuthProvider'
+
+const mockResolveActivationContext = vi.mocked(resolveActivationContext)
+const mockUseAuthContext = vi.mocked(useAuthContext)
+
 describe('SignInScreen', () => {
-  it('renders email, password, and sign-in CTA', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'VALID',
+    })
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+    })
+  })
+
+  it('renders email, password, and sign-in CTA', async () => {
     render(<SignInScreen />)
 
-    expect(screen.getByRole('heading', { name: 'Sign in to SignMaster' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Sign in to SignMaster' }),
+      ).toBeInTheDocument()
+    })
     expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument()
+  })
+
+  it('shows service error notice and blocks submit when context resolution fails', async () => {
+    const user = userEvent.setup()
+    const signIn = vi.fn()
+    mockResolveActivationContext.mockResolvedValue({ kind: 'service_unavailable' })
+
+    render(<SignInScreen signIn={signIn} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByTestId('activation-expired-notice')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activation-context-missing-notice')).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
+    await user.type(screen.getByLabelText('Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('retries context resolution after failure', async () => {
+    const user = userEvent.setup()
+    mockResolveActivationContext
+      .mockResolvedValueOnce({ kind: 'connection_error' })
+      .mockResolvedValueOnce({ kind: 'status', status: 'VALID' })
+
+    render(<SignInScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('activation-context-service-error-notice')).not.toBeInTheDocument()
+    })
+    expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
   })
 
   it('shows validation errors for invalid input', async () => {

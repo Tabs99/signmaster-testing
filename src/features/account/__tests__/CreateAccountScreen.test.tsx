@@ -5,16 +5,42 @@ import CreateAccountScreen from '../components/CreateAccountScreen'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import type { SignUpResult } from '../types'
 
+vi.mock('../../../lib/api/activationContextApi', () => ({
+  resolveActivationContext: vi.fn(),
+}))
+
+vi.mock('../../auth/context/AuthProvider', () => ({
+  useAuthContext: vi.fn(),
+}))
+
+import { resolveActivationContext } from '../../../lib/api/activationContextApi'
+import { useAuthContext } from '../../auth/context/AuthProvider'
+
+const mockResolveActivationContext = vi.mocked(resolveActivationContext)
+const mockUseAuthContext = vi.mocked(useAuthContext)
+
 describe('CreateAccountScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'VALID',
+    })
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+    })
   })
 
-  it('renders all form fields, labels, and CTA button correctly', () => {
+  it('renders all form fields, labels, and CTA button correctly', async () => {
     render(<CreateAccountScreen />)
 
     expect(screen.getByRole('img', { name: 'SignMaster' })).toBeInTheDocument()
-    expect(screen.getByText('Purchase verified')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('Purchase verified')).toBeInTheDocument()
+    })
     expect(
       screen.getByRole('heading', { name: 'Create your SignMaster account' }),
     ).toBeInTheDocument()
@@ -25,6 +51,77 @@ describe('CreateAccountScreen', () => {
       screen.getByRole('button', { name: 'Create Account & Continue' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+  })
+
+  it('shows missing-context notice when no activation context exists', async () => {
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'NONE',
+    })
+
+    render(<CreateAccountScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-missing-notice')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Purchase verified')).not.toBeInTheDocument()
+  })
+
+  it('shows expired notice for expired activation contexts', async () => {
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'EXPIRED',
+    })
+
+    render(<CreateAccountScreen onRestartActivation={vi.fn()} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-expired-notice')).toBeInTheDocument()
+    })
+  })
+
+  it('shows service error notice and blocks submit when context resolution fails', async () => {
+    const user = userEvent.setup()
+    const signUp = vi.fn()
+    mockResolveActivationContext.mockResolvedValue({ kind: 'service_unavailable' })
+
+    render(<CreateAccountScreen signUp={signUp} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Purchase verified')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activation-expired-notice')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activation-context-missing-notice')).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
+    await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
+    await user.type(screen.getByLabelText('Confirm Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+
+    expect(signUp).not.toHaveBeenCalled()
+  })
+
+  it('retries context resolution and restores verified badge on success', async () => {
+    const user = userEvent.setup()
+    mockResolveActivationContext
+      .mockResolvedValueOnce({ kind: 'connection_error' })
+      .mockResolvedValueOnce({ kind: 'status', status: 'VALID' })
+
+    render(<CreateAccountScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Purchase verified')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('activation-context-service-error-notice')).not.toBeInTheDocument()
+    expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
   })
 
   it('displays validation errors when fields are invalid after blur', async () => {

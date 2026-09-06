@@ -1,10 +1,18 @@
-import { FormEvent, useCallback, useRef, useState } from 'react'
+import { FormEvent, useCallback, useMemo, useRef, useState } from 'react'
 import PageShell from '../../../components/layout/PageShell'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import BrandLockup from '../../activation/components/BrandLockup'
+import {
+  ActivationContextMissingNotice,
+  ActivationContextServiceErrorNotice,
+  ActivationExpiredNotice,
+} from '../../activation/components/ActivationContextNotice'
+import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
 import FieldError from '../../activation/components/FieldError'
 import { authService } from '../../../lib/auth/authService'
+import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
+import { useAuthContext } from '../../auth/context/AuthProvider'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import {
   type AccountFieldName,
@@ -16,9 +24,12 @@ import { accountInputClasses, accountLabelClassName } from '../utils/fieldStyles
 import { isValidEmail, isValidPassword } from '../utils/validation'
 import EyeToggle from './EyeToggle'
 
-function SignedInCard() {
+function SignedInCard({ resumeState }: { resumeState: string | null }) {
   return (
-    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
+    <article
+      className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl"
+      data-resume-state={resumeState ?? undefined}
+    >
       <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
         <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
           <path
@@ -41,7 +52,15 @@ function SignedInCard() {
 export default function SignInScreen({
   signIn = authService.signIn.bind(authService),
   onCreateAccount,
+  onRestartActivation,
 }: SignInScreenProps) {
+  const {
+    status: contextStatus,
+    isLoading: contextLoading,
+    error: contextError,
+    retry: retryContextResolution,
+  } = useActivationContextResolution()
+  const { isAuthenticated, user, isInitializing: authInitializing } = useAuthContext()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const submitInFlightRef = useRef(false)
@@ -61,7 +80,30 @@ export default function SignInScreen({
   const showEmailErr = (emailTouched || submitAttempted) && !emailOk
   const showPwErr = (passwordTouched || submitAttempted) && !passwordOk
   const isLoading = formStatus === 'loading'
-  const canSubmit = emailOk && passwordOk && !isLoading
+  const contextResolutionBlocked = contextLoading || contextError
+  const canSubmit = emailOk && passwordOk && !isLoading && !contextResolutionBlocked
+
+  const resumeState = useMemo(() => {
+    if (contextLoading || authInitializing || contextError || !contextStatus) {
+      return null
+    }
+
+    return resolveActivationResumeState({
+      contextStatus,
+      auth: {
+        isAuthenticated,
+        isEmailConfirmed: Boolean(user?.emailConfirmed),
+      },
+      intent: 'sign_in',
+    })
+  }, [
+    authInitializing,
+    contextError,
+    contextLoading,
+    contextStatus,
+    isAuthenticated,
+    user?.emailConfirmed,
+  ])
 
   function fieldState(field: AccountFieldName): AccountFieldState {
     const isFocused = focusedField === field
@@ -82,6 +124,11 @@ export default function SignInScreen({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
+
+      if (contextLoading || contextError) {
+        return
+      }
+
       setSubmitAttempted(true)
       setEmailTouched(true)
       setPasswordTouched(true)
@@ -121,7 +168,7 @@ export default function SignInScreen({
         submitInFlightRef.current = false
       }
     },
-    [email, emailOk, passwordOk, signIn],
+    [contextError, contextLoading, email, emailOk, passwordOk, signIn],
   )
 
   if (formStatus === 'done') {
@@ -129,7 +176,7 @@ export default function SignInScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          <SignedInCard />
+          <SignedInCard resumeState={resumeState} />
         </div>
       </PageShell>
     )
@@ -141,6 +188,18 @@ export default function SignInScreen({
         <BrandLockup variant="desktop" />
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
+          {contextError ? (
+            <ActivationContextServiceErrorNotice
+              onRetry={retryContextResolution}
+              isRetrying={contextLoading}
+            />
+          ) : null}
+          {!contextError && resumeState === 'expired_context' ? (
+            <ActivationExpiredNotice onRestartActivation={onRestartActivation} />
+          ) : null}
+          {!contextError && resumeState === 'confirmed_auth_no_context' ? (
+            <ActivationContextMissingNotice />
+          ) : null}
           <h1 className="text-[clamp(20px,4.5vw,28px)] font-extrabold leading-tight tracking-tight text-white">
             Sign in to SignMaster
           </h1>
@@ -149,7 +208,10 @@ export default function SignInScreen({
           </p>
         </header>
 
-        <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl">
+        <article
+          className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl"
+          data-resume-state={resumeState ?? undefined}
+        >
           {authError ? (
             <div
               role="alert"
