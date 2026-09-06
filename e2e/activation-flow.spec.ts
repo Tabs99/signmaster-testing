@@ -1,17 +1,52 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
+const NOT_SHIPPED_FIXTURE_ORDER_ID = '222-2222222-2222222'
+const NOT_SHIPPED_FIXTURE_DIGITS = '22222222222222222'
 
-async function fillValidOrderId(page: import('@playwright/test').Page) {
+async function fillValidOrderId(page: Page) {
   await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
 }
 
-async function submitOrderCheck(page: import('@playwright/test').Page) {
+async function fillNotShippedFixtureOrderId(page: Page) {
+  await page.getByLabel('Amazon order number').fill(NOT_SHIPPED_FIXTURE_DIGITS)
+}
+
+async function submitOrderCheck(page: Page) {
   await page.getByRole('button', { name: 'Check my order' }).click()
 }
 
+async function expectApprovedCheckingButton(page: Page) {
+  const checkingButton = page.getByRole('button', { name: 'Checking your order…' })
+  await expect(checkingButton).toBeVisible()
+  await expect(checkingButton).toBeDisabled()
+  await expect(checkingButton).toHaveAttribute('aria-busy', 'true')
+  await expect(checkingButton.locator('svg[aria-hidden="true"]')).toBeVisible()
+  return checkingButton
+}
+
+async function startEntryFormWatch(page: Page) {
+  await page.evaluate(() => {
+    window.__entryFormSeenDuringWatch = false
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-testid="activation-entry-form"]')) {
+        window.__entryFormSeenDuringWatch = true
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    window.__entryFormObserver = observer
+  })
+}
+
+async function stopEntryFormWatch(page: Page) {
+  return page.evaluate(() => {
+    window.__entryFormObserver?.disconnect()
+    return window.__entryFormSeenDuringWatch === true
+  })
+}
+
 function mockVerifyRoute(
-  page: import('@playwright/test').Page,
+  page: Page,
   status: number,
   body: unknown,
   headers: Record<string, string> = {},
@@ -82,7 +117,7 @@ test.describe('SignMaster activation verification', () => {
     await fillValidOrderId(page)
     await submitOrderCheck(page)
 
-    await expect(page.getByRole('button', { name: 'Checking your order…' })).toBeVisible()
+    await expectApprovedCheckingButton(page)
     await expect(page.getByLabel('Amazon order number')).toBeDisabled()
 
     releaseResponse?.()
@@ -126,10 +161,30 @@ test.describe('SignMaster activation verification', () => {
 
     await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
     await expect(
-      page.getByText(
-        'App access will be available once Amazon dispatches your order. Please try again after dispatch.',
-      ),
+      page.getByText('App access will be available once Amazon dispatches your order.'),
     ).toBeVisible()
+    await expect(page.getByText('Please try again after dispatch.')).toBeVisible()
+  })
+
+  test('NOT_SHIPPED Use another order returns to empty focused entry field', async ({ page }) => {
+    await mockVerifyRoute(page, 200, { status: 'NOT_SHIPPED' })
+    await fillNotShippedFixtureOrderId(page)
+    await submitOrderCheck(page)
+
+    const resultCard = page.getByTestId('activation-result-card')
+    await expect(resultCard).toBeVisible()
+    await expect(resultCard.getByRole('button', { name: 'Use another order' })).toBeVisible()
+    await expect(resultCard.getByRole('button', { name: 'Get support' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Get support' })).toHaveCount(1)
+
+    await resultCard.getByRole('button', { name: 'Use another order' }).click()
+
+    const orderField = page.getByLabel('Amazon order number')
+    await expect(orderField).toBeVisible()
+    await expect(orderField).toHaveValue('')
+    await expect(orderField).toBeFocused()
+    await expect(page.getByTestId('activation-entry-form')).toBeVisible()
+    await expect(page.getByTestId('activation-result-card')).toHaveCount(0)
   })
 
   test('shows ALREADY_CLAIMED result', async ({ page }) => {
@@ -186,15 +241,103 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByRole('button', { name: 'Check again' })).toBeDisabled()
   })
 
-  test('retries NOT_SHIPPED when Check again is clicked', async ({ page }) => {
+  test('NOT_SHIPPED retry keeps stable result card during checking', async ({ page }) => {
     let callCount = 0
+    let releaseRetry: (() => void) | undefined
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve
+    })
+    let secondRequestReceived = false
+
     await page.route('**/api/activation/verify', async (route) => {
+      expect(route.request().method()).toBe('POST')
       callCount += 1
-      const status = callCount === 1 ? 'NOT_SHIPPED' : 'ELIGIBLE'
+
+      if (callCount === 1) {
+        expect(route.request().postDataJSON()).toEqual({
+          orderId: NOT_SHIPPED_FIXTURE_ORDER_ID,
+        })
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'NOT_SHIPPED' }),
+        })
+        return
+      }
+
+      expect(route.request().postDataJSON()).toEqual({
+        orderId: NOT_SHIPPED_FIXTURE_ORDER_ID,
+      })
+      secondRequestReceived = true
+      await retryGate
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: 'NOT_SHIPPED' }),
+      })
+    })
+
+    await fillNotShippedFixtureOrderId(page)
+    await submitOrderCheck(page)
+    const resultCard = page.getByTestId('activation-result-card')
+    await expect(resultCard).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
+
+    await startEntryFormWatch(page)
+    await page.getByRole('button', { name: 'Check again' }).click()
+
+    await expect.poll(() => secondRequestReceived).toBe(true)
+    expect(callCount).toBe(2)
+
+    await expect(resultCard).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
+    await expect(
+      page.getByText('App access will be available once Amazon dispatches your order.'),
+    ).toBeVisible()
+    await expect(page.getByTestId('activation-entry-form')).toHaveCount(0)
+    await expect(page.getByLabel('Amazon order number')).toHaveCount(0)
+    await expect(page.getByText(NOT_SHIPPED_FIXTURE_ORDER_ID)).toBeVisible()
+
+    const checkingButton = await expectApprovedCheckingButton(page)
+    await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0)
+
+    await checkingButton.click({ force: true })
+    expect(callCount).toBe(2)
+
+    expect(await stopEntryFormWatch(page)).toBe(false)
+
+    releaseRetry!()
+    await expect(resultCard).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Check again' })).toBeVisible()
+    expect(callCount).toBe(2)
+  })
+
+  test('retries NOT_SHIPPED when Check again is clicked and can reach ELIGIBLE', async ({
+    page,
+  }) => {
+    let callCount = 0
+    let releaseRetry: (() => void) | undefined
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve
+    })
+
+    await page.route('**/api/activation/verify', async (route) => {
+      callCount += 1
+      if (callCount === 1) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'NOT_SHIPPED' }),
+        })
+        return
+      }
+
+      await retryGate
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ELIGIBLE' }),
       })
     })
 
@@ -203,6 +346,12 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Check again' }).click()
+    await expect(page.getByLabel('Amazon order number')).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Your order is confirmed' })).toBeVisible()
+    await expectApprovedCheckingButton(page)
+    await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0)
+
+    releaseRetry!()
     await expect(page.getByRole('heading', { name: 'Your purchase is verified' })).toBeVisible()
     expect(callCount).toBe(2)
   })

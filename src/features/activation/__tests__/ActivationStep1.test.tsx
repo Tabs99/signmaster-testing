@@ -50,6 +50,12 @@ function expectNoStorageWrites() {
   expect(sessionStorage.length).toBe(0)
 }
 
+function expectCheckingButton(button: HTMLElement) {
+  expect(button).toHaveAttribute('aria-busy', 'true')
+  expect(button).toBeDisabled()
+  expect(button.querySelector('svg[aria-hidden="true"]')).toBeTruthy()
+}
+
 describe('ActivationStep1', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -340,9 +346,8 @@ describe('ActivationStep1', () => {
 
         expect(verifyOrder).toHaveBeenCalledTimes(1)
         expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
-        expect(
-          screen.getByRole('button', { name: 'Checking your order…' }),
-        ).toBeInTheDocument()
+        const checkingButton = screen.getByRole('button', { name: 'Checking your order…' })
+        expectCheckingButton(checkingButton)
         expect(
           screen.queryByRole('button', { name: 'Check my order' }),
         ).not.toBeInTheDocument()
@@ -385,7 +390,7 @@ describe('ActivationStep1', () => {
         await submitOrder(user)
 
         const checkingButton = screen.getByRole('button', { name: 'Checking your order…' })
-        expect(checkingButton).toHaveAttribute('aria-busy', 'true')
+        expectCheckingButton(checkingButton)
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
@@ -458,8 +463,11 @@ describe('ActivationStep1', () => {
           ).toBeInTheDocument()
         })
         expect(
+          screen.getByText('Your SignMaster purchase has been verified.'),
+        ).toBeInTheDocument()
+        expect(
           screen.getByText(
-            'Your SignMaster purchase has been verified. Next, create an account or sign in to activate access and save your progress.',
+            'Next, create an account or sign in to activate access and save your progress.',
           ),
         ).toBeInTheDocument()
         expect(screen.getByText(VALID_ORDER_ID)).toBeInTheDocument()
@@ -535,7 +543,12 @@ describe('ActivationStep1', () => {
         })
         expect(
           screen.getByText(
-            'Check the digits, and make sure it is the Amazon order containing your SignMaster flashcards. If you placed your order very recently, it may take a little while to appear — please try again later.',
+            'Please check the digits and make sure this is the Amazon order for your SignMaster flashcards.',
+          ),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText(
+            'If you placed the order recently, it may take a little time to appear. Please try again later.',
           ),
         ).toBeInTheDocument()
         expect(screen.getByText(VALID_ORDER_ID)).toBeInTheDocument()
@@ -602,8 +615,11 @@ describe('ActivationStep1', () => {
         })
         expect(
           screen.getByText(
-            'App access will be available once Amazon dispatches your order. Please try again after dispatch.',
+            'App access will be available once Amazon dispatches your order.',
           ),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('Please try again after dispatch.'),
         ).toBeInTheDocument()
         expectNoStorageWrites()
       })
@@ -633,6 +649,130 @@ describe('ActivationStep1', () => {
             screen.getByRole('heading', { name: 'Your purchase is verified' }),
           ).toBeInTheDocument()
         })
+        expect(
+          screen.queryByRole('heading', { name: 'Your order is confirmed' }),
+        ).not.toBeInTheDocument()
+      })
+
+      it('shows checking state without the entry form when Check again is clicked', async () => {
+        const user = userEvent.setup()
+        const verifyOrder = vi
+          .fn()
+          .mockResolvedValueOnce({
+            kind: 'business_status',
+            status: 'NOT_SHIPPED',
+          })
+          .mockImplementationOnce(
+            () =>
+              new Promise<ActivationVerifyResult>(() => {
+                /* pending retry */
+              }),
+          )
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await user.click(await screen.findByRole('button', { name: 'Check again' }))
+
+        expect(verifyOrder).toHaveBeenCalledTimes(2)
+        expect(
+          screen.queryByRole('form', { name: 'Amazon order verification form' }),
+        ).not.toBeInTheDocument()
+        expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+        expect(screen.getByTestId('activation-result-card')).toBeInTheDocument()
+        expect(screen.queryByLabelText('Amazon order number')).not.toBeInTheDocument()
+        expect(
+          screen.getByRole('heading', { name: 'Your order is confirmed' }),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('App access will be available once Amazon dispatches your order.'),
+        ).toBeInTheDocument()
+        expectCheckingButton(screen.getByRole('button', { name: 'Checking your order…' }))
+        expect(screen.getByText(VALID_ORDER_ID)).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument()
+      })
+
+      it('keeps A8 context during checking then shows A5 when retry returns ELIGIBLE', async () => {
+        const user = userEvent.setup()
+        let resolveRetry: (value: ActivationVerifyResult) => void = () => undefined
+        const verifyOrder = vi
+          .fn()
+          .mockResolvedValueOnce({
+            kind: 'business_status',
+            status: 'NOT_SHIPPED',
+          })
+          .mockImplementationOnce(
+            () =>
+              new Promise<ActivationVerifyResult>((resolve) => {
+                resolveRetry = resolve
+              }),
+          )
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await user.click(await screen.findByRole('button', { name: 'Check again' }))
+
+        expect(
+          screen.getByRole('heading', { name: 'Your order is confirmed' }),
+        ).toBeInTheDocument()
+        expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+        expectCheckingButton(screen.getByRole('button', { name: 'Checking your order…' }))
+
+        resolveRetry({ kind: 'business_status', status: 'ELIGIBLE' })
+
+        await waitFor(() => {
+          expect(
+            screen.getByRole('heading', { name: 'Your purchase is verified' }),
+          ).toBeInTheDocument()
+        })
+        expect(
+          screen.queryByRole('heading', { name: 'Your order is confirmed' }),
+        ).not.toBeInTheDocument()
+      })
+
+      it('shows Use another order without duplicating Get support in the card', async () => {
+        const user = userEvent.setup()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'NOT_SHIPPED',
+        })
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await screen.findByRole('heading', { name: 'Your order is confirmed' })
+
+        const resultCard = screen.getByTestId('activation-result-card')
+        expect(within(resultCard).getByRole('button', { name: 'Use another order' })).toBeInTheDocument()
+        expect(within(resultCard).queryByRole('button', { name: 'Get support' })).not.toBeInTheDocument()
+        expect(screen.getAllByRole('button', { name: 'Get support' })).toHaveLength(1)
+      })
+
+      it('returns to entry with a cleared focused field when Use another order is clicked', async () => {
+        const user = userEvent.setup()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'NOT_SHIPPED',
+        })
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await user.click(await screen.findByRole('button', { name: 'Use another order' }))
+
+        const field = screen.getByLabelText('Amazon order number')
+        expect(field).toHaveValue('')
+        await waitFor(() => {
+          expect(document.activeElement).toBe(field)
+        })
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+        expect(screen.queryByTestId('activation-result-card')).not.toBeInTheDocument()
+        expect(verifyOrder).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -655,7 +795,12 @@ describe('ActivationStep1', () => {
         })
         expect(
           screen.getByText(
-            'A SignMaster account has already been activated with this order. Sign in to that account to carry on where you left off.',
+            'A SignMaster account has already been activated with this order.',
+          ),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText(
+            'Sign in to that account to carry on where you left off.',
           ),
         ).toBeInTheDocument()
         expectNoStorageWrites()
@@ -761,9 +906,10 @@ describe('ActivationStep1', () => {
         })
         expect(
           screen.getByText(
-            "It looks like the SignMaster pack from this order was returned, so this order can't be used to activate app access. If that's not right, get in touch.",
+            "It looks like the SignMaster pack from this order was returned, so this order can't be used to activate app access.",
           ),
         ).toBeInTheDocument()
+        expect(screen.getByText("If that's not right, get in touch.")).toBeInTheDocument()
         expectNoStorageWrites()
       })
 
@@ -810,8 +956,11 @@ describe('ActivationStep1', () => {
         })
         expect(
           screen.getByText(
-            "We've had several verification attempts. Please wait a few minutes before trying again. If you still need help, contact support.",
+            "We've had several verification attempts. Please wait a few minutes before trying again.",
           ),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('If you still need help, contact support.'),
         ).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled()
         expectNoStorageWrites()
@@ -893,8 +1042,11 @@ describe('ActivationStep1', () => {
         })
         expect(
           screen.getByText(
-            'SignMaster is temporarily unavailable. Your order number has been kept. Please try again in a few minutes.',
+            'SignMaster is temporarily unavailable. Your order number has been kept.',
           ),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('Please try again in a few minutes.'),
         ).toBeInTheDocument()
         expectNoStorageWrites()
       })
@@ -921,6 +1073,98 @@ describe('ActivationStep1', () => {
             screen.getByRole('heading', { name: 'Your purchase is verified' }),
           ).toBeInTheDocument()
         })
+        expect(
+          screen.queryByRole('heading', { name: "We can't check your order right now" }),
+        ).not.toBeInTheDocument()
+      })
+
+      it('keeps A13A context during checking then shows A5 when retry returns ELIGIBLE', async () => {
+        const user = userEvent.setup()
+        let resolveRetry: (value: ActivationVerifyResult) => void = () => undefined
+        const verifyOrder = vi
+          .fn()
+          .mockResolvedValueOnce({ kind: 'service_unavailable' })
+          .mockImplementationOnce(
+            () =>
+              new Promise<ActivationVerifyResult>((resolve) => {
+                resolveRetry = resolve
+              }),
+          )
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+        expect(
+          screen.getByRole('heading', { name: "We can't check your order right now" }),
+        ).toBeInTheDocument()
+        expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+        expectCheckingButton(screen.getByRole('button', { name: 'Checking your order…' }))
+
+        resolveRetry({ kind: 'business_status', status: 'ELIGIBLE' })
+
+        await waitFor(() => {
+          expect(
+            screen.getByRole('heading', { name: 'Your purchase is verified' }),
+          ).toBeInTheDocument()
+        })
+        expect(
+          screen.queryByRole('heading', { name: "We can't check your order right now" }),
+        ).not.toBeInTheDocument()
+      })
+
+      it('shows checking state without the entry form when Try again is clicked', async () => {
+        const user = userEvent.setup()
+        const verifyOrder = vi
+          .fn()
+          .mockResolvedValueOnce({ kind: 'service_unavailable' })
+          .mockImplementationOnce(
+            () =>
+              new Promise<ActivationVerifyResult>(() => {
+                /* pending retry */
+              }),
+          )
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+        expect(verifyOrder).toHaveBeenCalledTimes(2)
+        expect(
+          screen.queryByRole('form', { name: 'Amazon order verification form' }),
+        ).not.toBeInTheDocument()
+        expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+        expect(screen.getByTestId('activation-result-card')).toBeInTheDocument()
+        expect(screen.queryByLabelText('Amazon order number')).not.toBeInTheDocument()
+        expect(
+          screen.getByRole('heading', { name: "We can't check your order right now" }),
+        ).toBeInTheDocument()
+        expectCheckingButton(screen.getByRole('button', { name: 'Checking your order…' }))
+        expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+      })
+
+      it('returns to entry with a cleared focused field when Use another order is clicked', async () => {
+        const user = userEvent.setup()
+        const verifyOrder = createVerifyMock({ kind: 'service_unavailable' })
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await user.click(await screen.findByRole('button', { name: 'Use another order' }))
+
+        const field = screen.getByLabelText('Amazon order number')
+        expect(field).toHaveValue('')
+        await waitFor(() => {
+          expect(document.activeElement).toBe(field)
+        })
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+        expect(screen.queryByTestId('activation-result-card')).not.toBeInTheDocument()
+        expect(verifyOrder).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -939,9 +1183,10 @@ describe('ActivationStep1', () => {
           ).toBeInTheDocument()
         })
         expect(
-          screen.getByText(
-            'Check your internet connection and try again. Your order number has been kept.',
-          ),
+          screen.getByText('Check your internet connection and try again.'),
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('Your order number has been kept.'),
         ).toBeInTheDocument()
         expectNoStorageWrites()
       })

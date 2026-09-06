@@ -15,6 +15,7 @@ import { isValidOrderId } from '../utils/validation'
 import ActivationShell from './ActivationShell'
 import ActivationStatusPlate from './ActivationStatusPlate'
 import BrandLockup from './BrandLockup'
+import CheckingOrderButton from './CheckingOrderButton'
 import HelpSheet from './HelpSheet'
 import KeylinePlate from './KeylinePlate'
 import OrderIdField from './OrderIdField'
@@ -36,6 +37,8 @@ export default function ActivationStep1({
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [phase, setPhase] = useState<ActivationUiPhase>('entry')
   const [resultKind, setResultKind] = useState<ActivationResultKind | null>(null)
+  const [presentedResultKind, setPresentedResultKind] =
+    useState<ActivationResultKind | null>(null)
   const [rateLimitRetryAt, setRateLimitRetryAt] = useState<number | null>(null)
   const [rateLimitRetryReady, setRateLimitRetryReady] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -86,7 +89,6 @@ export default function ActivationStep1({
 
       verifyInFlightRef.current = true
       setPhase('checking')
-      setResultKind(null)
 
       try {
         const result = await verifyOrder(orderIdToVerify)
@@ -102,6 +104,7 @@ export default function ActivationStep1({
     if (result.kind === 'invalid_order_id') {
       setPhase('entry')
       setResultKind(null)
+      setPresentedResultKind(null)
       setSubmitAttempted(true)
       setFieldTouched(true)
       requestAnimationFrame(() => orderIdRef.current?.focus())
@@ -110,6 +113,7 @@ export default function ActivationStep1({
 
     if (result.kind === 'rate_limited') {
       setResultKind('rate_limited')
+      setPresentedResultKind('rate_limited')
       setPhase('result')
       setRateLimitRetryAt(
         result.retryAfterMs !== null ? Date.now() + result.retryAfterMs : null,
@@ -120,6 +124,7 @@ export default function ActivationStep1({
 
     const kind = mapVerifyResultToKind(result)
     setResultKind(kind)
+    setPresentedResultKind(kind)
     setPhase('result')
     setRateLimitRetryAt(null)
 
@@ -149,11 +154,16 @@ export default function ActivationStep1({
     }
     setPhase('entry')
     setResultKind(null)
+    setPresentedResultKind(null)
     setRateLimitRetryAt(null)
     setRateLimitRetryReady(false)
     if (options?.focusField !== false) {
       requestAnimationFrame(() => orderIdRef.current?.focus())
     }
+  }
+
+  function handleUseAnotherOrder() {
+    returnToEntry({ clearOrderId: true, focusField: true })
   }
 
   function handleStatusPrimaryAction() {
@@ -189,8 +199,19 @@ export default function ActivationStep1({
   }
 
   function handleStatusSecondaryAction() {
-    if (resultKind === 'not_found') {
+    if (!resultKind) {
+      return
+    }
+
+    const content = getActivationStatusContent(resultKind)
+
+    if (content.secondaryKind === 'help') {
       openHelp(0, showMeWhereRef.current, 'Finding your Amazon order number')
+      return
+    }
+
+    if (content.secondaryKind === 'use_another_order') {
+      handleUseAnotherOrder()
       return
     }
 
@@ -239,8 +260,22 @@ export default function ActivationStep1({
     }
   }
 
-  const statusContent =
-    phase === 'result' && resultKind ? getActivationStatusContent(resultKind) : null
+  const statusContent = presentedResultKind
+    ? getActivationStatusContent(presentedResultKind)
+    : null
+  const isResultChecking = phase === 'checking' && presentedResultKind !== null
+  const showStatusPlate = Boolean(
+    presentedResultKind && (phase === 'result' || isResultChecking),
+  )
+
+  function resolveRetryCheckingPrimaryAction() {
+    return {
+      label: 'Checking your order…',
+      onClick: () => undefined,
+      disabled: true,
+      loading: true,
+    }
+  }
 
   return (
     <>
@@ -262,17 +297,22 @@ export default function ActivationStep1({
         </header>
 
         <KeylinePlate className="mt-5 max-[667px]:mt-3">
-          {phase === 'result' && statusContent ? (
+          {showStatusPlate && statusContent ? (
             <ActivationStatusPlate
+              data-testid="activation-result-card"
               tone={statusContent.tone}
               heading={statusContent.heading}
               body={statusContent.body}
               orderId={statusContent.showOrderId ? orderId : undefined}
-              primaryAction={resolvePrimaryAction()}
-              secondaryAction={resolveSecondaryAction()}
+              primaryAction={
+                isResultChecking ? resolveRetryCheckingPrimaryAction() : resolvePrimaryAction()
+              }
+              secondaryAction={isResultChecking ? undefined : resolveSecondaryAction()}
+              checking={isResultChecking}
             />
           ) : (
             <form
+              data-testid="activation-entry-form"
               noValidate
               onSubmit={handleSubmit}
               aria-label="Amazon order verification form"
@@ -291,14 +331,13 @@ export default function ActivationStep1({
               />
 
               <div className="mt-[18px] max-[667px]:mt-3.5">
-                <PrimaryButton
-                  type="submit"
-                  enabled={canSubmit}
-                  aria-busy={isChecking}
-                  disabled={isChecking}
-                >
-                  {isChecking ? 'Checking your order…' : 'Check my order'}
-                </PrimaryButton>
+                {isChecking ? (
+                  <CheckingOrderButton type="submit" />
+                ) : (
+                  <PrimaryButton type="submit" enabled={canSubmit}>
+                    Check my order
+                  </PrimaryButton>
+                )}
               </div>
             </form>
           )}

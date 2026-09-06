@@ -1,3 +1,4 @@
+import CheckingOrderButtonLabel from './CheckingOrderButtonLabel'
 import PrimaryButton from './PrimaryButton'
 import SecondaryButton from './SecondaryButton'
 
@@ -7,15 +8,18 @@ interface ActivationStatusAction {
   label: string
   onClick: () => void
   disabled?: boolean
+  loading?: boolean
 }
 
 interface ActivationStatusPlateProps {
   tone: ActivationStatusTone
   heading: string
-  body: string
+  body: readonly string[]
   orderId?: string
   primaryAction?: ActivationStatusAction
   secondaryAction?: ActivationStatusAction
+  checking?: boolean
+  'data-testid'?: string
 }
 
 const TONE_STYLES: Record<
@@ -58,16 +62,22 @@ export default function ActivationStatusPlate({
   orderId,
   primaryAction,
   secondaryAction,
+  checking = false,
+  'data-testid': dataTestId,
 }: ActivationStatusPlateProps) {
   const styles = TONE_STYLES[tone]
+  const isPrimaryLoading = Boolean(primaryAction?.loading)
+  const hasActionArea = Boolean(primaryAction || secondaryAction)
 
   return (
     <div
+      data-testid={dataTestId}
       role="status"
       aria-live="polite"
+      aria-busy={checking || primaryAction?.loading ? true : undefined}
       className={`rounded-md border ${styles.border} bg-keyline-pane px-4 py-4`}
     >
-      <div className="flex gap-3">
+      <div className="flex gap-3 text-left">
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${styles.iconBg} ${styles.icon} font-bold`}
           aria-hidden="true"
@@ -78,9 +88,18 @@ export default function ActivationStatusPlate({
           <h2 className="text-[18px] font-extrabold leading-[1.2] tracking-[-0.02em] text-white">
             {heading}
           </h2>
-          <p className="mt-2 text-[14px] leading-[1.55] text-white/70">{body}</p>
+          <div className="mt-2 max-w-[50ch] space-y-2">
+            {body.map((paragraph) => (
+              <p
+                key={paragraph}
+                className="text-[14px] leading-[1.55] text-white/70"
+              >
+                {paragraph}
+              </p>
+            ))}
+          </div>
           {orderId ? (
-            <p className="mt-3 font-mono text-[12px] leading-snug text-white/55">
+            <p className="mt-3 max-w-[50ch] font-mono text-[12px] leading-snug text-white/55">
               Order ID:{' '}
               <span className="text-keyline-gold">{orderId}</span>
             </p>
@@ -88,19 +107,25 @@ export default function ActivationStatusPlate({
         </div>
       </div>
 
-      {primaryAction || secondaryAction ? (
+      {hasActionArea ? (
         <div className="mt-4 space-y-3">
           {primaryAction ? (
-            <PrimaryButton
-              type="button"
-              enabled={!primaryAction.disabled}
-              disabled={primaryAction.disabled}
-              onClick={primaryAction.onClick}
-            >
-              {primaryAction.label}
-            </PrimaryButton>
+            isPrimaryLoading ? (
+              <PrimaryButton type="button" enabled loading>
+                <CheckingOrderButtonLabel />
+              </PrimaryButton>
+            ) : (
+              <PrimaryButton
+                type="button"
+                enabled={!primaryAction.disabled}
+                disabled={primaryAction.disabled}
+                onClick={primaryAction.onClick}
+              >
+                {primaryAction.label}
+              </PrimaryButton>
+            )
           ) : null}
-          {secondaryAction ? (
+          {secondaryAction && !isPrimaryLoading ? (
             <SecondaryButton type="button" onClick={secondaryAction.onClick}>
               {secondaryAction.label}
             </SecondaryButton>
