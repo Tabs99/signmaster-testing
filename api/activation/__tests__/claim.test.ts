@@ -74,6 +74,61 @@ describe('handleActivationClaim', () => {
     expect(res.body).toEqual({ status: 'UNAUTHENTICATED' })
   })
 
+  it('returns UNAUTHENTICATED when token validation fails without treating it as infrastructure error', async () => {
+    const res = createMockResponse()
+    const resolveContextWithOrderId = vi.fn()
+    const deps = createDeps({
+      getAuthenticatedUser: vi.fn().mockResolvedValue(null),
+      resolveContextWithOrderId,
+    })
+
+    await handleActivationClaim(
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer invalid-token',
+          cookie: `sm_activation_ctx=${encodeURIComponent(FIXTURE_TOKEN)}`,
+        },
+      },
+      res,
+      deps,
+    )
+
+    expect(res.statusCode).toBe(401)
+    expect(res.body).toEqual({ status: 'UNAUTHENTICATED' })
+    expect(resolveContextWithOrderId).not.toHaveBeenCalled()
+  })
+
+  it('returns ERROR when auth dependency throws without leaking details', async () => {
+    const res = createMockResponse()
+    const resolveContextWithOrderId = vi.fn()
+    const deps = createDeps({
+      getAuthenticatedUser: vi.fn().mockRejectedValue(
+        new Error('Supabase auth.getUser outage: secret-token-abc123'),
+      ),
+      resolveContextWithOrderId,
+    })
+
+    await handleActivationClaim(
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer secret-token-abc123',
+          cookie: `sm_activation_ctx=${encodeURIComponent(FIXTURE_TOKEN)}`,
+        },
+      },
+      res,
+      deps,
+    )
+
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ status: 'ERROR' })
+    expect(JSON.stringify(res.body)).not.toContain('Supabase')
+    expect(JSON.stringify(res.body)).not.toContain('secret-token-abc123')
+    expect(JSON.stringify(res.body)).not.toContain('auth.getUser')
+    expect(resolveContextWithOrderId).not.toHaveBeenCalled()
+  })
+
   it('returns EMAIL_NOT_CONFIRMED for unconfirmed users', async () => {
     const res = createMockResponse()
     const deps = createDeps({

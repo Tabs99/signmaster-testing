@@ -38,6 +38,19 @@ describe('requestAuth', () => {
     ).resolves.toBeNull()
   })
 
+  it('propagates auth infrastructure failures instead of returning null', async () => {
+    await expect(
+      getAuthenticatedUserFromRequest(
+        { authorization: 'Bearer good-token' },
+        {
+          getUserFromAccessToken: async () => {
+            throw new Error('Supabase auth service unavailable')
+          },
+        },
+      ),
+    ).rejects.toThrow('Supabase auth service unavailable')
+  })
+
   it('returns authenticated user from validated token', async () => {
     await expect(
       getAuthenticatedUserFromRequest(

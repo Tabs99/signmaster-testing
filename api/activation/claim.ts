@@ -108,26 +108,26 @@ export async function handleActivationClaim(
     return
   }
 
-  const authenticatedUser = await deps.getAuthenticatedUser(req.headers)
-
-  if (!authenticatedUser) {
-    res.status(401).json({ status: 'UNAUTHENTICATED' })
-    return
-  }
-
-  if (!authenticatedUser.emailConfirmed) {
-    res.status(200).json({ status: 'EMAIL_NOT_CONFIRMED' })
-    return
-  }
-
-  const contextToken = parseActivationContextCookie(getCookieHeader(req))
-
-  if (!contextToken) {
-    res.status(200).json({ status: 'NO_CONTEXT' })
-    return
-  }
-
   try {
+    const authenticatedUser = await deps.getAuthenticatedUser(req.headers)
+
+    if (!authenticatedUser) {
+      res.status(401).json({ status: 'UNAUTHENTICATED' })
+      return
+    }
+
+    if (!authenticatedUser.emailConfirmed) {
+      res.status(200).json({ status: 'EMAIL_NOT_CONFIRMED' })
+      return
+    }
+
+    const contextToken = parseActivationContextCookie(getCookieHeader(req))
+
+    if (!contextToken) {
+      res.status(200).json({ status: 'NO_CONTEXT' })
+      return
+    }
+
     const supabaseClient = deps.createClient()
     const contextResolution = await deps.resolveContextWithOrderId({
       supabaseClient,
