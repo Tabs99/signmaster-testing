@@ -80,6 +80,50 @@ describe('CreateAccountScreen', () => {
     })
   })
 
+  it('shows service error notice and blocks submit when context resolution fails', async () => {
+    const user = userEvent.setup()
+    const signUp = vi.fn()
+    mockResolveActivationContext.mockResolvedValue({ kind: 'service_unavailable' })
+
+    render(<CreateAccountScreen signUp={signUp} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Purchase verified')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activation-expired-notice')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activation-context-missing-notice')).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
+    await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
+    await user.type(screen.getByLabelText('Confirm Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+
+    expect(signUp).not.toHaveBeenCalled()
+  })
+
+  it('retries context resolution and restores verified badge on success', async () => {
+    const user = userEvent.setup()
+    mockResolveActivationContext
+      .mockResolvedValueOnce({ kind: 'connection_error' })
+      .mockResolvedValueOnce({ kind: 'status', status: 'VALID' })
+
+    render(<CreateAccountScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Purchase verified')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('activation-context-service-error-notice')).not.toBeInTheDocument()
+    expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
+  })
+
   it('displays validation errors when fields are invalid after blur', async () => {
     const user = userEvent.setup()
     render(<CreateAccountScreen />)

@@ -48,6 +48,47 @@ describe('SignInScreen', () => {
     expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument()
   })
 
+  it('shows service error notice and blocks submit when context resolution fails', async () => {
+    const user = userEvent.setup()
+    const signIn = vi.fn()
+    mockResolveActivationContext.mockResolvedValue({ kind: 'service_unavailable' })
+
+    render(<SignInScreen signIn={signIn} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByTestId('activation-expired-notice')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activation-context-missing-notice')).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
+    await user.type(screen.getByLabelText('Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('retries context resolution after failure', async () => {
+    const user = userEvent.setup()
+    mockResolveActivationContext
+      .mockResolvedValueOnce({ kind: 'connection_error' })
+      .mockResolvedValueOnce({ kind: 'status', status: 'VALID' })
+
+    render(<SignInScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('activation-context-service-error-notice')).not.toBeInTheDocument()
+    })
+    expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
+  })
+
   it('shows validation errors for invalid input', async () => {
     const user = userEvent.setup()
     render(<SignInScreen />)

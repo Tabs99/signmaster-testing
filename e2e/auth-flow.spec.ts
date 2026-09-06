@@ -96,6 +96,7 @@ test.describe('SignMaster auth foundation', () => {
 
   test('create-account basic flow with mocked Supabase sign-up', async ({ page }) => {
     await mockSupabaseSignUpSuccess(page, AUTH_TEST_EMAIL)
+    await mockActivationContextCreate(page)
     await page.goto('/create-account')
 
     await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)
@@ -109,6 +110,7 @@ test.describe('SignMaster auth foundation', () => {
 
   test('sign-in basic flow with mocked Supabase token exchange', async ({ page }) => {
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
+    await mockActivationContextCreate(page)
     await page.goto('/sign-in')
 
     await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)

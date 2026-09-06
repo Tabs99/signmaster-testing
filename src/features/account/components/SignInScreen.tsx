@@ -5,6 +5,7 @@ import PrimaryButton from '../../activation/components/PrimaryButton'
 import BrandLockup from '../../activation/components/BrandLockup'
 import {
   ActivationContextMissingNotice,
+  ActivationContextServiceErrorNotice,
   ActivationExpiredNotice,
 } from '../../activation/components/ActivationContextNotice'
 import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
@@ -53,8 +54,12 @@ export default function SignInScreen({
   onCreateAccount,
   onRestartActivation,
 }: SignInScreenProps) {
-  const { status: contextStatus, isLoading: contextLoading } =
-    useActivationContextResolution()
+  const {
+    status: contextStatus,
+    isLoading: contextLoading,
+    error: contextError,
+    retry: retryContextResolution,
+  } = useActivationContextResolution()
   const { isAuthenticated, user, isInitializing: authInitializing } = useAuthContext()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -75,10 +80,11 @@ export default function SignInScreen({
   const showEmailErr = (emailTouched || submitAttempted) && !emailOk
   const showPwErr = (passwordTouched || submitAttempted) && !passwordOk
   const isLoading = formStatus === 'loading'
-  const canSubmit = emailOk && passwordOk && !isLoading
+  const contextResolutionBlocked = contextLoading || contextError
+  const canSubmit = emailOk && passwordOk && !isLoading && !contextResolutionBlocked
 
   const resumeState = useMemo(() => {
-    if (contextLoading || authInitializing || !contextStatus) {
+    if (contextLoading || authInitializing || contextError || !contextStatus) {
       return null
     }
 
@@ -92,6 +98,7 @@ export default function SignInScreen({
     })
   }, [
     authInitializing,
+    contextError,
     contextLoading,
     contextStatus,
     isAuthenticated,
@@ -117,6 +124,11 @@ export default function SignInScreen({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
+
+      if (contextLoading || contextError) {
+        return
+      }
+
       setSubmitAttempted(true)
       setEmailTouched(true)
       setPasswordTouched(true)
@@ -156,7 +168,7 @@ export default function SignInScreen({
         submitInFlightRef.current = false
       }
     },
-    [email, emailOk, passwordOk, signIn],
+    [contextError, contextLoading, email, emailOk, passwordOk, signIn],
   )
 
   if (formStatus === 'done') {
@@ -176,10 +188,16 @@ export default function SignInScreen({
         <BrandLockup variant="desktop" />
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
-          {resumeState === 'expired_context' ? (
+          {contextError ? (
+            <ActivationContextServiceErrorNotice
+              onRetry={retryContextResolution}
+              isRetrying={contextLoading}
+            />
+          ) : null}
+          {!contextError && resumeState === 'expired_context' ? (
             <ActivationExpiredNotice onRestartActivation={onRestartActivation} />
           ) : null}
-          {resumeState === 'confirmed_auth_no_context' ? (
+          {!contextError && resumeState === 'confirmed_auth_no_context' ? (
             <ActivationContextMissingNotice />
           ) : null}
           <h1 className="text-[clamp(20px,4.5vw,28px)] font-extrabold leading-tight tracking-tight text-white">

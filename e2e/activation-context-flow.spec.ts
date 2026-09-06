@@ -113,4 +113,40 @@ test.describe('SignMaster activation context persistence', () => {
     await expect(page.getByTestId('activation-context-missing-notice')).toBeVisible()
     await expect(page.getByText('Purchase verified')).toHaveCount(0)
   })
+
+  test('context GET failure shows retry notice and recovers to VALID', async ({ page }) => {
+    let contextGetAttempts = 0
+
+    await page.route('**/api/activation/context', async (route) => {
+      if (route.request().method() === 'GET') {
+        contextGetAttempts += 1
+
+        if (contextGetAttempts === 1) {
+          await route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({ status: 'ERROR' }),
+          })
+          return
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'VALID' }),
+        })
+        return
+      }
+
+      await route.continue()
+    })
+
+    await page.goto('/create-account')
+
+    await expect(page.getByTestId('activation-context-service-error-notice')).toBeVisible()
+    await expect(page.getByText('Purchase verified')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Retry' }).click()
+    await expect(page.getByText('Purchase verified')).toBeVisible()
+    expect(contextGetAttempts).toBe(2)
+  })
 })
