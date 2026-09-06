@@ -13,11 +13,17 @@ vi.mock('../../auth/context/AuthProvider', () => ({
   useAuthContext: vi.fn(),
 }))
 
+vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
+  useActivationClaimWhenReady: vi.fn(() => ({ kind: 'idle' })),
+}))
+
 import { resolveActivationContext } from '../../../lib/api/activationContextApi'
 import { useAuthContext } from '../../auth/context/AuthProvider'
+import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
 
 const mockResolveActivationContext = vi.mocked(resolveActivationContext)
 const mockUseAuthContext = vi.mocked(useAuthContext)
+const mockUseActivationClaimWhenReady = vi.mocked(useActivationClaimWhenReady)
 
 describe('CreateAccountScreen', () => {
   beforeEach(() => {
@@ -226,5 +232,51 @@ describe('CreateAccountScreen', () => {
       expect(screen.getByText('Confirm your email')).toBeInTheDocument()
       expect(screen.getByText(AUTH_MESSAGES.emailConfirmationRequired)).toBeInTheDocument()
     })
+  })
+
+  it('requests claim when context and confirmed auth are ready', async () => {
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: true,
+      user: {
+        id: '11111111-1111-4111-8111-111111111111',
+        email: 'alex@example.invalid',
+        emailConfirmed: true,
+      },
+      signOut: vi.fn(),
+    })
+
+    render(<CreateAccountScreen />)
+
+    await waitFor(() => {
+      expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
+        expect.objectContaining({ ready: true }),
+      )
+    })
+  })
+
+  it('does not request claim while context resolution is in error', async () => {
+    mockResolveActivationContext.mockResolvedValue({ kind: 'service_unavailable' })
+
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: true,
+      user: {
+        id: '11111111-1111-4111-8111-111111111111',
+        email: 'alex@example.invalid',
+        emailConfirmed: true,
+      },
+      signOut: vi.fn(),
+    })
+
+    render(<CreateAccountScreen />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+    })
+
+    expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
+      expect.objectContaining({ ready: false }),
+    )
   })
 })

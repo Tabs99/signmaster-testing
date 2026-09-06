@@ -7,6 +7,7 @@ import {
   ActivationExpiredNotice,
 } from '../../activation/components/ActivationContextNotice'
 import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
+import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
 import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
@@ -43,9 +44,12 @@ function EmailConfirmationCard() {
   )
 }
 
-function AccountSuccessCard() {
+function AccountSuccessCard({ claimOutcome }: { claimOutcome?: string }) {
   return (
-    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
+    <article
+      className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl"
+      data-claim-outcome={claimOutcome}
+    >
       <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
         <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
           <path
@@ -197,6 +201,11 @@ export default function CreateAccountScreen({
     user?.emailConfirmed,
   ])
 
+  const claimReady = resumeState === 'valid_context_confirmed_auth'
+  const claimState = useActivationClaimWhenReady({ ready: claimReady })
+  const claimOutcome =
+    claimState.kind === 'outcome' ? claimState.outcome : undefined
+
   const showVerifiedBadge =
     resumeState === 'valid_context' ||
     resumeState === 'valid_context_unconfirmed_auth' ||
@@ -301,7 +310,7 @@ export default function CreateAccountScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          <AccountSuccessCard />
+          <AccountSuccessCard claimOutcome={claimOutcome} />
         </div>
       </PageShell>
     )
