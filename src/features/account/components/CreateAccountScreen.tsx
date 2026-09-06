@@ -2,8 +2,11 @@ import { FormEvent, useCallback, useRef, useState } from 'react'
 import PageShell from '../../../components/layout/PageShell'
 import BrandLockup from '../../activation/components/BrandLockup'
 import FieldError from '../../activation/components/FieldError'
+import LoadingSpinner from '../../activation/components/LoadingSpinner'
+import PrimaryButton from '../../activation/components/PrimaryButton'
+import { authService } from '../../../lib/auth/authService'
+import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import {
-  ACCOUNT_STORAGE_KEY,
   type AccountFieldName,
   type AccountFieldState,
   type CreateAccountScreenProps,
@@ -16,13 +19,44 @@ import {
   isValidEmail,
   isValidPassword,
   passwordsMatch,
-  shouldSimulateExistingAccount,
 } from '../utils/validation'
 import EyeToggle from './EyeToggle'
 import PasswordRequirement from './PasswordRequirement'
 import ValidTick from './ValidTick'
 
-const CREATE_ACCOUNT_DELAY_MS = 1800
+function EmailConfirmationCard() {
+  return (
+    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
+      <p className="text-xl font-extrabold tracking-tight text-white">Confirm your email</p>
+      <p className="mt-2 text-sm leading-relaxed text-white/65">
+        {AUTH_MESSAGES.emailConfirmationRequired}
+      </p>
+    </article>
+  )
+}
+
+function AccountSuccessCard() {
+  return (
+    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
+      <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
+        <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
+          <path
+            d="M6 13.5l5 5L20 8"
+            stroke="#0a1628"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+      <p className="text-xl font-extrabold tracking-tight text-white">Account created!</p>
+      <p className="mt-2 text-sm leading-relaxed text-white/65">
+        You&apos;re signed in. Activation will continue in a later step — your companion app
+        access is not unlocked yet.
+      </p>
+    </article>
+  )
+}
 
 function PurchaseVerifiedBadge() {
   return (
@@ -75,52 +109,31 @@ function ExistingAccountAlert({ onSignIn }: { onSignIn?: () => void }) {
       </svg>
       <div>
         <p className="text-[13px] font-bold leading-snug text-amber-300">
-          An account already exists with this email.{' '}
+          {AUTH_MESSAGES.emailAlreadyRegistered}{' '}
           <button
             type="button"
             onClick={onSignIn}
             className="font-bold text-accent-gold underline underline-offset-2"
           >
-            Sign in to continue.
+            Sign in
           </button>
         </p>
         <p className="mt-1.5 text-xs leading-snug text-white/60">
-          Or use a different email address to create a new account.
+          Or use a different email address to try again.
         </p>
       </div>
     </div>
   )
 }
 
-function AccountSuccessCard() {
-  return (
-    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
-      <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
-        <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
-          <path
-            d="M6 13.5l5 5L20 8"
-            stroke="#0a1628"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-      <p className="text-xl font-extrabold tracking-tight text-white">Account created!</p>
-      <p className="mt-2 text-sm leading-relaxed text-white/65">
-        Welcome to SignMaster. Your companion app is ready.
-      </p>
-    </article>
-  )
-}
-
 export default function CreateAccountScreen({
-  onComplete,
+  signUp = authService.signUp.bind(authService),
   onSignIn,
 }: CreateAccountScreenProps) {
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
+  const submitInFlightRef = useRef(false)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -132,9 +145,8 @@ export default function CreateAccountScreen({
   const [focusedField, setFocusedField] = useState<AccountFieldName | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [formStatus, setFormStatus] = useState<CreateAccountStatus>(() =>
-    localStorage.getItem(ACCOUNT_STORAGE_KEY) === 'true' ? 'done' : 'idle',
-  )
+  const [formStatus, setFormStatus] = useState<CreateAccountStatus>('idle')
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const emailOk = isValidEmail(email)
   const pwLengthOk = hasMinPasswordLength(password)
@@ -193,19 +205,42 @@ export default function CreateAccountScreen({
         return
       }
 
-      setFormStatus('loading')
-      await new Promise((resolve) => window.setTimeout(resolve, CREATE_ACCOUNT_DELAY_MS))
-
-      if (shouldSimulateExistingAccount(email)) {
-        setFormStatus('existing-account')
+      if (submitInFlightRef.current) {
         return
       }
 
-      localStorage.setItem(ACCOUNT_STORAGE_KEY, 'true')
-      setFormStatus('done')
-      onComplete?.()
+      submitInFlightRef.current = true
+      setAuthError(null)
+      setFormStatus('loading')
+
+      try {
+        const result = await signUp(email, password)
+
+        if (result.kind === 'success') {
+          setFormStatus('done')
+          return
+        }
+
+        if (result.kind === 'email_confirmation_required') {
+          setFormStatus('email-confirmation')
+          return
+        }
+
+        if (result.error.code === 'email_already_registered') {
+          setFormStatus('existing-account')
+          return
+        }
+
+        setAuthError(result.error.message)
+        setFormStatus('idle')
+      } catch {
+        setAuthError(AUTH_MESSAGES.networkError)
+        setFormStatus('idle')
+      } finally {
+        submitInFlightRef.current = false
+      }
     },
-    [email, emailOk, matchOk, onComplete, passwordOk],
+    [email, emailOk, matchOk, passwordOk, signUp],
   )
 
   const isLoading = formStatus === 'loading'
@@ -217,6 +252,17 @@ export default function CreateAccountScreen({
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
           <AccountSuccessCard />
+        </div>
+      </PageShell>
+    )
+  }
+
+  if (formStatus === 'email-confirmation') {
+    return (
+      <PageShell>
+        <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
+          <BrandLockup variant="desktop" />
+          <EmailConfirmationCard />
         </div>
       </PageShell>
     )
@@ -240,6 +286,15 @@ export default function CreateAccountScreen({
         <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl">
           {formStatus === 'existing-account' ? (
             <ExistingAccountAlert onSignIn={onSignIn} />
+          ) : null}
+
+          {authError ? (
+            <div
+              role="alert"
+              className="mb-5 rounded-[10px] border border-amber-500/30 bg-amber-500/10 px-4 py-3.5 text-[13px] font-medium leading-snug text-amber-300"
+            >
+              {authError}
+            </div>
           ) : null}
 
           <form
@@ -404,43 +459,16 @@ export default function CreateAccountScreen({
               </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              aria-disabled={!canSubmit}
-              className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-[10px] border-0 px-6 py-[15px] text-[15px] font-bold tracking-wide transition-[background,color,box-shadow] duration-200 ${
-                canSubmit
-                  ? 'cursor-pointer bg-gradient-cta text-[#0a1628] shadow-[0_3px_12px_rgba(240,192,74,0.18)] hover:shadow-[0_6px_20px_rgba(240,192,74,0.28)]'
-                  : 'cursor-not-allowed bg-white/10 text-white/55'
-              }`}
-            >
+            <PrimaryButton type="submit" enabled={canSubmit} loading={isLoading} className="w-full">
               {isLoading ? (
-                <>
-                  <svg
-                    aria-hidden="true"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    className="animate-spin"
-                  >
-                    <circle
-                      cx="8"
-                      cy="8"
-                      r="6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeDasharray="28"
-                      strokeDashoffset="10"
-                      strokeLinecap="round"
-                    />
-                  </svg>
+                <span className="inline-flex items-center gap-2">
+                  <LoadingSpinner />
                   Creating your account…
-                </>
+                </span>
               ) : (
                 'Create Account & Continue'
               )}
-            </button>
+            </PrimaryButton>
 
             <p className="mt-1 text-center text-sm leading-relaxed text-white/[0.62]">
               Already have a SignMaster account?{' '}

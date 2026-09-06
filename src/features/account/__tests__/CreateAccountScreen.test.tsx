@@ -2,11 +2,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CreateAccountScreen from '../components/CreateAccountScreen'
-import { ACCOUNT_STORAGE_KEY } from '../types'
+import { AUTH_MESSAGES } from '../../../lib/auth/types'
+import type { SignUpResult } from '../types'
 
 describe('CreateAccountScreen', () => {
   beforeEach(() => {
-    localStorage.clear()
+    vi.clearAllMocks()
   })
 
   it('renders all form fields, labels, and CTA button correctly', () => {
@@ -46,26 +47,87 @@ describe('CreateAccountScreen', () => {
     ).toBeInTheDocument()
   })
 
-  it('successfully submits and updates localStorage when valid data is entered', async () => {
+  it('shows loading state and completes successful signup without entitlement messaging', async () => {
     const user = userEvent.setup()
-    const onComplete = vi.fn()
+    let resolveSignUp: (value: SignUpResult) => void = () => undefined
+    const signUp = vi.fn(
+      (): Promise<SignUpResult> =>
+        new Promise((resolve) => {
+          resolveSignUp = resolve
+        }),
+    )
 
-    render(<CreateAccountScreen onComplete={onComplete} />)
+    render(<CreateAccountScreen signUp={signUp} />)
 
-    await user.type(screen.getByLabelText('Email Address'), 'alex@example.com')
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
     await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
     await user.type(screen.getByLabelText('Confirm Password'), 'Secure123!')
     await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
 
     expect(screen.getByText('Creating your account…')).toBeInTheDocument()
+    expect(signUp).toHaveBeenCalledOnce()
 
-    await waitFor(
-      () => {
-        expect(localStorage.getItem(ACCOUNT_STORAGE_KEY)).toBe('true')
-        expect(onComplete).toHaveBeenCalledOnce()
-        expect(screen.getByText('Account created!')).toBeInTheDocument()
+    resolveSignUp({
+      kind: 'success',
+      user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+      session: {
+        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
       },
-      { timeout: 3000 },
-    )
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Account created!')).toBeInTheDocument()
+      expect(
+        screen.getByText(/Activation will continue in a later step/i),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/companion app is ready/i)).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows existing-account alert with non-enumerating copy for duplicate registration', async () => {
+    const user = userEvent.setup()
+    const signUp = vi.fn().mockResolvedValue({
+      kind: 'error',
+      error: {
+        code: 'email_already_registered',
+        message: AUTH_MESSAGES.emailAlreadyRegistered,
+      },
+    })
+
+    render(<CreateAccountScreen signUp={signUp} />)
+
+    await user.type(screen.getByLabelText('Email Address'), 'exists@example.invalid')
+    await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
+    await user.type(screen.getByLabelText('Confirm Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/We could not create your account. If you already have one, try signing in./i),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(/An account already exists with this email/i),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows email confirmation state when sign-up requires confirmation', async () => {
+    const user = userEvent.setup()
+    const signUp = vi.fn().mockResolvedValue({
+      kind: 'email_confirmation_required',
+      user: { id: '2', email: 'pending@example.invalid', emailConfirmed: false },
+    })
+
+    render(<CreateAccountScreen signUp={signUp} />)
+
+    await user.type(screen.getByLabelText('Email Address'), 'pending@example.invalid')
+    await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
+    await user.type(screen.getByLabelText('Confirm Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm your email')).toBeInTheDocument()
+      expect(screen.getByText(AUTH_MESSAGES.emailConfirmationRequired)).toBeInTheDocument()
+    })
   })
 })

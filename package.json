@@ -16,6 +16,10 @@
     "test:amazon-auth": "node --env-file=.env.local --import tsx server/scripts/testAmazonAuth.ts",
     "test:amazon-orders": "node --env-file=.env.local --import tsx server/scripts/testAmazonOrders.ts",
     "test:amazon-supabase": "node --env-file=.env.local --import tsx server/scripts/testAmazonSupabase.ts",
+    "smoke:activation-verify-local": "node --env-file=.env.local --import tsx server/scripts/smokeActivationVerifyLocal.ts",
+    "seed:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/seedActivationTestFixturesLocal.ts",
+    "verify:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/verifyActivationTestFixturesLocal.ts",
+    "clean:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/cleanActivationTestFixturesLocal.ts",
     "sync:amazon": "node --env-file=.env.local --import tsx server/scripts/syncAmazon.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
@@ -24,7 +28,8 @@
     "@supabase/supabase-js": "^2.114.0",
     "lucide-react": "^0.487.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
