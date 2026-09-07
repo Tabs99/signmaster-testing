@@ -60,6 +60,21 @@ function mockComplete(page: Page, status: string, counter?: { count: number }) {
   })
 }
 
+function mockContinuationCreate(page: Page, reference = 'e2e-continuation-reference-0123456789abcdef') {
+  return page.route('**/api/activation/continuation', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'CREATED', reference }),
+    })
+  })
+}
+
 /**
  * Mocks a Supabase sign-up that requires email confirmation: no session token and
  * an unconfirmed user, mirroring Supabase when confirmations are enabled.
@@ -158,6 +173,7 @@ test.describe('SignMaster activation completion', () => {
     page,
   }) => {
     await mockContextResolve(page, 'VALID')
+    await mockContinuationCreate(page)
     await mockSupabaseSignUpConfirmationRequired(page, PENDING_EMAIL)
 
     await page.goto('/create-account')

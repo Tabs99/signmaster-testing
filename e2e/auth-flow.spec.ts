@@ -48,6 +48,24 @@ function mockActivationContextCreate(page: Page) {
   })
 }
 
+function mockContinuationCreate(page: Page) {
+  return page.route('**/api/activation/continuation', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'CREATED',
+        reference: 'e2e-continuation-reference-0123456789abcdef',
+      }),
+    })
+  })
+}
+
 function mockActivationClaim(page: Page, status: string) {
   return page.route('**/api/activation/claim', async (route) => {
     if (route.request().method() !== 'POST') {
@@ -114,6 +132,7 @@ test.describe('SignMaster auth foundation', () => {
   }) => {
     await mockSupabaseSignUpSuccess(page, AUTH_TEST_EMAIL)
     await mockActivationContextCreate(page)
+    await mockContinuationCreate(page)
     await mockActivationClaim(page, 'SUCCESS')
     await page.goto('/create-account')
 

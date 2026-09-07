@@ -16,10 +16,12 @@ describe('requestAuth', () => {
     expect(
       mapAuthenticatedRequestUser({
         id: 'user-1',
+        email: 'owner@example.invalid',
         email_confirmed_at: '2026-01-01T00:00:00.000Z',
       } as never),
     ).toEqual({
       id: 'user-1',
+      email: 'owner@example.invalid',
       emailConfirmed: true,
     })
   })
@@ -60,6 +62,7 @@ describe('requestAuth', () => {
             data: {
               user: {
                 id: 'user-1',
+                email: 'owner@example.invalid',
                 email_confirmed_at: '2026-01-01T00:00:00.000Z',
               },
             },
@@ -69,6 +72,7 @@ describe('requestAuth', () => {
       ),
     ).resolves.toEqual({
       id: 'user-1',
+      email: 'owner@example.invalid',
       emailConfirmed: true,
     })
   })

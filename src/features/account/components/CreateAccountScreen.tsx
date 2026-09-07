@@ -14,6 +14,7 @@ import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import { authService } from '../../../lib/auth/authService'
+import { buildConfirmationContinuationRedirect } from '../../../lib/activation/confirmationRedirect'
 import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
 import { useAuthContext } from '../../auth/context/AuthProvider'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
@@ -131,6 +132,7 @@ function ExistingAccountAlert({ onSignIn }: { onSignIn?: () => void }) {
 
 export default function CreateAccountScreen({
   signUp = authService.signUp.bind(authService),
+  buildConfirmationRedirect = buildConfirmationContinuationRedirect,
   onSignIn,
   onRestartActivation,
 }: CreateAccountScreenProps) {
@@ -270,7 +272,8 @@ export default function CreateAccountScreen({
       setFormStatus('loading')
 
       try {
-        const result = await signUp(email, password)
+        const emailRedirectTo = await buildConfirmationRedirect(email)
+        const result = await signUp(email, password, { emailRedirectTo })
 
         if (result.kind === 'success') {
           setFormStatus('done')
@@ -296,7 +299,16 @@ export default function CreateAccountScreen({
         submitInFlightRef.current = false
       }
     },
-    [contextError, contextLoading, email, emailOk, matchOk, passwordOk, signUp],
+    [
+      buildConfirmationRedirect,
+      contextError,
+      contextLoading,
+      email,
+      emailOk,
+      matchOk,
+      passwordOk,
+      signUp,
+    ],
   )
 
   const recheckEmailConfirmation = useCallback(async () => {
@@ -329,21 +341,32 @@ export default function CreateAccountScreen({
   const canSubmit =
     emailOk && passwordOk && matchOk && !isLoading && !contextResolutionBlocked
 
+  // Show the claim/continuation result whenever a claim is active. This covers
+  // both the same-device path (after form submit) and the cross-device resume,
+  // where the confirming device lands here already authenticated with a valid
+  // context and the claim runs without a fresh form submission.
+  if (claimActive) {
+    return (
+      <PageShell>
+        <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
+          <BrandLockup variant="desktop" />
+          <ActivationClaimResult
+            claimState={claimState}
+            onRetryClaim={retryClaim}
+            onSignIn={onSignIn}
+            onRestartActivation={onRestartActivation}
+          />
+        </div>
+      </PageShell>
+    )
+  }
+
   if (formStatus === 'done') {
     return (
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          {claimActive ? (
-            <ActivationClaimResult
-              claimState={claimState}
-              onRetryClaim={retryClaim}
-              onSignIn={onSignIn}
-              onRestartActivation={onRestartActivation}
-            />
-          ) : (
-            <AccountSuccessCard claimOutcome={claimOutcome} />
-          )}
+          <AccountSuccessCard claimOutcome={claimOutcome} />
         </div>
       </PageShell>
     )
