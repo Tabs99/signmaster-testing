@@ -71,6 +71,75 @@ describe('ActivationClaimResult', () => {
     expect(complete).toHaveBeenCalledTimes(2)
   })
 
+  it('does NOT show activated when finalisation returns not_eligible', async () => {
+    const complete = vi
+      .fn<() => Promise<ActivationCompletionResult>>()
+      .mockResolvedValue({ kind: 'outcome', outcome: 'not_eligible' })
+    const onRestartActivation = vi.fn()
+    const user = userEvent.setup()
+
+    renderResult(
+      { kind: 'outcome', outcome: 'success' },
+      { complete, onRestartActivation },
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    await waitFor(() => {
+      expect(screen.getByText("We couldn't confirm your access")).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Your SignMaster access is active')).not.toBeInTheDocument()
+    expect(screen.queryByText("You're in — SignMaster is activated")).not.toBeInTheDocument()
+    expect(
+      document.querySelector('[data-continuation-view="finalize_not_eligible"]'),
+    ).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Use another order' }))
+    expect(onRestartActivation).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT show activated when finalisation reports email not confirmed', async () => {
+    const complete = vi
+      .fn<() => Promise<ActivationCompletionResult>>()
+      .mockResolvedValue({ kind: 'outcome', outcome: 'email_not_confirmed' })
+    const user = userEvent.setup()
+
+    renderResult({ kind: 'outcome', outcome: 'success' }, { complete, onSignIn: vi.fn() })
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm your email to finish')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Your SignMaster access is active')).not.toBeInTheDocument()
+    expect(
+      document.querySelector('[data-continuation-view="finalize_email_not_confirmed"]'),
+    ).not.toBeNull()
+  })
+
+  it('does NOT show activated when finalisation reports unauthenticated', async () => {
+    const complete = vi
+      .fn<() => Promise<ActivationCompletionResult>>()
+      .mockResolvedValue({ kind: 'outcome', outcome: 'unauthenticated' })
+    const onSignIn = vi.fn()
+    const user = userEvent.setup()
+
+    renderResult({ kind: 'outcome', outcome: 'success' }, { complete, onSignIn })
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign in to finish activating')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Your SignMaster access is active')).not.toBeInTheDocument()
+    expect(
+      document.querySelector('[data-continuation-view="finalize_unauthenticated"]'),
+    ).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+  })
+
   it('offers sign in and use-another-order for an order claimed by another account', async () => {
     const user = userEvent.setup()
     const onSignIn = vi.fn()

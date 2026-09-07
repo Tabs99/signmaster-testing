@@ -85,5 +85,32 @@ describe('resolveActivationContinuationView', () => {
         resolveActivationContinuationView(success, { kind: 'connection_error' }),
       ).toBe('finalize_retryable_error')
     })
+
+    it('does NOT show activated when completion is not_eligible', () => {
+      const view = resolveActivationContinuationView(success, {
+        kind: 'outcome',
+        outcome: 'not_eligible',
+      })
+      expect(view).toBe('finalize_not_eligible')
+      expect(view).not.toBe('activated')
+    })
+
+    it('does NOT show activated when completion reports email not confirmed', () => {
+      const view = resolveActivationContinuationView(success, {
+        kind: 'outcome',
+        outcome: 'email_not_confirmed',
+      })
+      expect(view).toBe('finalize_email_not_confirmed')
+      expect(view).not.toBe('activated')
+    })
+
+    it('does NOT show activated when completion reports unauthenticated', () => {
+      const view = resolveActivationContinuationView(success, {
+        kind: 'outcome',
+        outcome: 'unauthenticated',
+      })
+      expect(view).toBe('finalize_unauthenticated')
+      expect(view).not.toBe('activated')
+    })
   })
 })

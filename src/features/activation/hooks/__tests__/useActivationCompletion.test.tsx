@@ -85,4 +85,54 @@ describe('useActivationCompletion', () => {
 
     expect(complete).toHaveBeenCalledTimes(2)
   })
+
+  it('treats no_context as terminal (already finalised) and blocks another attempt', async () => {
+    const complete = vi.fn().mockResolvedValue({ kind: 'outcome', outcome: 'no_context' })
+
+    const { result } = renderHook(() => useActivationCompletion({ complete }))
+
+    act(() => {
+      result.current.run()
+    })
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'no_context' })
+    })
+
+    act(() => {
+      result.current.run()
+    })
+
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['not_eligible', 'email_not_confirmed', 'unauthenticated'] as const)(
+    'keeps completion retryable after a non-terminal %s outcome',
+    async (outcome) => {
+      const complete = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'outcome', outcome })
+        .mockResolvedValueOnce({ kind: 'outcome', outcome: 'completed' })
+
+      const { result } = renderHook(() => useActivationCompletion({ complete }))
+
+      act(() => {
+        result.current.run()
+      })
+
+      await waitFor(() => {
+        expect(result.current.state).toEqual({ kind: 'outcome', outcome })
+      })
+
+      act(() => {
+        result.current.run()
+      })
+
+      await waitFor(() => {
+        expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'completed' })
+      })
+
+      expect(complete).toHaveBeenCalledTimes(2)
+    },
+  )
 })

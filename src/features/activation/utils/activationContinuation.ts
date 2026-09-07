@@ -15,6 +15,9 @@ export type ActivationContinuationView =
   | 'finalizing'
   | 'activated'
   | 'finalize_retryable_error'
+  | 'finalize_not_eligible'
+  | 'finalize_email_not_confirmed'
+  | 'finalize_unauthenticated'
   | 'already_claimed'
   | 'not_eligible'
   | 'no_context'
@@ -77,9 +80,25 @@ function resolveSuccessView(
     return 'finalize_retryable_error'
   }
 
-  // Any definitive completion outcome (completed / no_context / and the
-  // defensive not_eligible|email_not_confirmed|unauthenticated races) resolves to
-  // the terminal activated state: the claim was the authority for access and a
-  // completion no_context simply means the context was already finalised.
-  return 'activated'
+  // The completion endpoint re-checks ownership/active status at finalisation
+  // time and is authoritative. A stale claim SUCCESS must NOT paper over a
+  // negative completion outcome.
+  switch (completion.outcome) {
+    case 'completed':
+      return 'activated'
+    case 'no_context':
+      // Deliberate recovery semantics: after a successful claim, an empty
+      // activation context means finalisation already happened (the cookie was
+      // cleared on a previous COMPLETED response), so we treat it as activated.
+      // See ARCHITECTURE.md "repeated completion semantics".
+      return 'activated'
+    case 'not_eligible':
+      // Entitlement is no longer active/owned at finalisation (e.g. revoked
+      // between claim and completion). Never show activated.
+      return 'finalize_not_eligible'
+    case 'email_not_confirmed':
+      return 'finalize_email_not_confirmed'
+    case 'unauthenticated':
+      return 'finalize_unauthenticated'
+  }
 }

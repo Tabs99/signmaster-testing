@@ -192,6 +192,39 @@ function resolvePlateContent(
           loading: completion.state.kind === 'loading',
         },
       }
+    case 'finalize_not_eligible':
+      return {
+        tone: 'warning',
+        heading: "We couldn't confirm your access",
+        body: [
+          "We couldn't confirm active SignMaster access on this account.",
+          'Verify your Amazon order again, or contact support if you think this is a mistake.',
+        ],
+        primaryAction: restartAction('Use another order'),
+        secondaryAction: supportAction(),
+      }
+    case 'finalize_email_not_confirmed':
+      return {
+        tone: 'neutral',
+        heading: 'Confirm your email to finish',
+        body: [AUTH_MESSAGES.emailConfirmationRequired],
+        primaryAction: {
+          label: 'Try again',
+          onClick: () => completion.run(),
+          loading: completion.state.kind === 'loading',
+        },
+        secondaryAction: onSignIn ? { label: 'Sign in', onClick: onSignIn } : undefined,
+      }
+    case 'finalize_unauthenticated':
+      return {
+        tone: 'neutral',
+        heading: 'Sign in to finish activating',
+        body: [
+          'Your session has expired before we could finish activating your access.',
+          'Sign in again to continue.',
+        ],
+        primaryAction: onSignIn ? { label: 'Sign in', onClick: onSignIn } : undefined,
+      }
     case 'already_claimed': {
       const signInAction = onSignIn
         ? { label: 'Sign in', onClick: onSignIn }

@@ -23,11 +23,29 @@ export interface UseActivationCompletionResult {
   state: ActivationCompletionState
   /**
    * Finalises the activation once. Repeated calls are ignored while a request is
-   * in flight or after a definitive outcome has been received, so Continue /
-   * Retry can never launch duplicate concurrent completion requests. A transient
-   * service/connection failure leaves the completion retryable.
+   * in flight, and are permanently disabled after a *terminal* outcome, so
+   * Continue / Retry can never launch duplicate concurrent completion requests.
+   *
+   * Terminal outcomes are `completed` and `no_context` (already finalised).
+   * Non-terminal outcomes — `not_eligible`, `email_not_confirmed`,
+   * `unauthenticated` — plus transient service/connection failures leave the
+   * completion retryable so the user can recover (e.g. after re-auth or email
+   * confirmation) via an explicit action. There is no automatic retry loop.
    */
   run: () => void
+}
+
+/**
+ * Outcomes that permanently close the completion lifecycle. Everything else is
+ * a recoverable state the user can retry from with an explicit action.
+ */
+const TERMINAL_COMPLETION_OUTCOMES: ReadonlySet<ActivationCompletionOutcome> = new Set([
+  'completed',
+  'no_context',
+])
+
+function isTerminalOutcome(result: ActivationCompletionResult): boolean {
+  return result.kind === 'outcome' && TERMINAL_COMPLETION_OUTCOMES.has(result.outcome)
 }
 
 function mapCompletionResult(result: ActivationCompletionResult): ActivationCompletionState {
@@ -57,7 +75,7 @@ export function useActivationCompletion(
     void (async () => {
       const result = await complete()
 
-      if (result.kind === 'outcome') {
+      if (isTerminalOutcome(result)) {
         completedRef.current = true
       }
 
