@@ -512,16 +512,69 @@ The response body never contains the Amazon Order ID, the context token, or enti
 | Repeat with a stale cookie whose context is invalidated/expired | Resolves to `NO_CONTEXT`; the stale cookie is cleared |
 | Cleanup failure (invalidate throws) | Completion errors out with the context/cookie intact so the user can retry — no partial finalisation |
 
-### Cross-device / cross-browser confirmation (Task 6 note)
+### Completion outcome authority (finalisation is authoritative)
 
-The activation-context cookie (Task 4) provides continuity only within the **same browser/device**. Email confirmation that completes in a *different* browser (e.g. the customer opens the confirmation email on their phone) will not carry the HttpOnly cookie.
+The Task 5 claim `SUCCESS` grants the entitlement, but the completion check re-verifies ownership/active status **at finalisation time** and is authoritative. A stale claim `SUCCESS` must never paper over a negative completion outcome. The continuation view resolver (`src/features/activation/utils/activationContinuation.ts` → `resolveSuccessView`) maps each completion outcome as follows:
 
-For the Task 6 MVP this is handled without a new cross-device mechanism:
+| Completion outcome after claim SUCCESS | Continuation view | Shows "activated"? |
+|----------------------------------------|-------------------|--------------------|
+| `COMPLETED` | `activated` | Yes |
+| `NO_CONTEXT` | `activated` | Yes — deliberate recovery: an empty context after a successful claim means finalisation already happened (see repeated-completion semantics above) |
+| `NOT_ELIGIBLE` (e.g. entitlement revoked between claim and completion) | `finalize_not_eligible` | **No** — safe access/finalisation failure, no internal reason exposed |
+| `EMAIL_NOT_CONFIRMED` | `finalize_email_not_confirmed` | **No** — confirmation/re-auth recovery |
+| `UNAUTHENTICATED` | `finalize_unauthenticated` | **No** — sign-in/re-auth recovery |
+| `service_unavailable` / `connection_error` | `finalize_retryable_error` | Access stays active; only cleanup is retryable |
 
-- The confirmation-continuation UI runs in the original browser, which still holds the activation-context cookie. After confirming their email (on any device) the customer returns to the original tab and clicks **"I've confirmed my email"**, which re-checks the auth session and resumes the frozen resolver flow.
-- If the customer instead continues on the confirming device, they land signed-out/without context and are routed through the existing resolver states (`S1A` sign-in / `B10` no-context recovery) — no success is shown without a verified, owned, active entitlement.
+`useActivationCompletion` only marks the completion **terminal** (permanently disabling another attempt) for `COMPLETED` and `NO_CONTEXT`. `NOT_ELIGIBLE`, `EMAIL_NOT_CONFIRMED`, `UNAUTHENTICATED`, and transient failures leave completion retryable so the user can recover with an explicit action — there is no automatic retry loop.
 
-A dedicated short-lived, opaque, single-use, server-side continuation reference (carrying **no** Order ID, context token, user-identity authority, or reusable credential) is the intended mechanism if/when true cross-device hand-off is required. It is **deferred** here because implementing it would materially broaden Task 6 beyond the completion/continuation scope, and the resolver already provides a safe recovery path on the confirming device.
+### Cross-device / cross-browser confirmation (continuation reference)
+
+The activation-context cookie (Task 4) provides continuity only within the **same browser/device**. Email confirmation that completes in a *different* browser (e.g. the customer opens the confirmation email on their phone) will not carry the HttpOnly cookie. Task 6 closes this gap with a short-lived, opaque, single-use, server-side **continuation reference**.
+
+**Reference lifecycle**
+
+```
+Original browser (has activation-context cookie):
+  eligible order → activation context created → "Create Account & Continue"
+    → POST /api/activation/continuation  (reads context cookie server-side; body: { email })
+        → activationContinuationService.createActivationContinuation:
+            • resolve context token → amazon_order_id (server-side; no touch/refresh)
+            • generate opaque reference (32 random bytes, base64url)
+            • store SHA-256(reference) + amazon_order_id + normalised email + expires_at
+        → returns the raw reference to the browser
+    → signUp(..., { emailRedirectTo: `${origin}/activation/continue?ref=<opaque>` })
+    → Supabase sends the confirmation email carrying the opaque ref in the link
+
+Confirming device (any browser; NO original cookie):
+  clicks the email link → Supabase establishes the confirmed session (detectSessionInUrl)
+    → lands on /activation/continue?ref=<opaque> (ActivationContinueScreen)
+    → POST /api/activation/continue  (Bearer token + body: { ref })
+        → require authenticated + confirmed session
+        → activationContinuationService.consumeActivationContinuation:
+            • look up by SHA-256(ref); bind check: row.email === authenticated email
+            • single-use: conditional `consumed_at IS NULL` update (race-safe)
+            • mint a FRESH activation context for the same verified order
+        → on CONTINUED: re-issue the HttpOnly activation-context cookie on this device
+    → resume to /create-account → resolver sees VALID context + confirmed auth
+    → normal Task 5 claim → success (claim rules unchanged)
+```
+
+**TTL & single-use**
+
+- TTL: `ACTIVATION_CONTINUATION_LIFETIME_SECONDS` = 30 minutes (`server/activation/continuationReference.ts`).
+- Single-use: the first successful consume sets `consumed_at`; a conditional `consumed_at IS NULL` update makes concurrent consumes race-safe. Replays resolve to `ALREADY_CONSUMED`.
+
+**Privacy boundary**
+
+- The browser-visible reference is an opaque random token. It carries **no** Amazon Order ID, activation-context token, `token_hash`, user id, email, or reusable credential.
+- The server stores only the SHA-256 hash of the reference (never the raw value), the order id, and the normalised sign-up email as a binding key. All continuation state is resolved server-side.
+- The sign-up email is a **binding key only**: the authoritative identity is the confirmed Supabase session at consume time (`email` from the validated Bearer token). A different authenticated user cannot consume another user's reference; mismatches resolve to `INVALID` with no account/order enumeration.
+- Consuming a reference only re-establishes an activation *context* (a verified-order pointer). It never grants an entitlement — the entitlement claim still follows the unchanged Task 5 authenticated/confirmed/atomic rules.
+
+**Fallback / recovery**
+
+- Unknown, malformed, expired, already-consumed, or mismatched-email references all resolve to a safe recovery state on `/activation/continue` ("This activation link can't be used" → Sign in / Verify my order). No enumeration.
+- No `ref` present, or an unauthenticated confirming device: the screen routes onward (resume when already authenticated, otherwise prompt sign-in), so the **same-browser** path — return to the original tab, click "I've confirmed my email", refresh session, claim — is unaffected. Both paths coexist.
 
 ### Current vs target gap
 
@@ -1083,3 +1136,4 @@ sequenceDiagram
 | 2026-09-01 | Clean-up: cross-browser testing strategy, app_entitlements FK, order-level retained quantity, responsive numbering, reconciliation_checkpoint |
 | 2026-09-03 | CI workflow documented; corrected stale “not yet present” notes for `api/`, `server/`, `e2e/`, Playwright, Supabase migrations, activation verify, and order-sync foundation |
 | 2026-09-06 | Task 6: documented activation completion/finalisation flow (`POST /api/activation/complete`), completion endpoint security & repeat-completion idempotency rules, and the cross-device confirmation note (deferred continuation reference) |
+| 2026-09-07 | Task 6 corrections: completion outcome authority (a claim SUCCESS no longer overrides `NOT_ELIGIBLE` / `EMAIL_NOT_CONFIRMED` / `UNAUTHENTICATED` at finalisation; terminal-only completion lock) and implemented true cross-device confirmation via a short-lived, opaque, single-use, server-side continuation reference (`POST /api/activation/continuation` + `POST /api/activation/continue`, `activation_continuations` table) |
