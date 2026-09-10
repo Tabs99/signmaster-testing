@@ -551,9 +551,11 @@ Confirming device (any browser; NO original cookie):
     → POST /api/activation/continue  (Bearer token + body: { ref })
         → require authenticated + confirmed session
         → activationContinuationService.consumeActivationContinuation:
-            • look up by SHA-256(ref); bind check: row.email === authenticated email
-            • single-use: conditional `consumed_at IS NULL` update (race-safe)
-            • mint a FRESH activation context for the same verified order
+            • generate the raw context token app-side (only its hash is stored)
+            • call the `consume_activation_continuation` Postgres function, which
+              in ONE transaction: SELECT ... FOR UPDATE the reference, verify
+              hash/email/not-consumed/not-expired, mark consumed_at, and INSERT
+              the fresh activation_context for the same amazon_order_id
         → on CONTINUED: re-issue the HttpOnly activation-context cookie on this device
     → resume to /create-account → resolver sees VALID context + confirmed auth
     → normal Task 5 claim → success (claim rules unchanged)
@@ -562,7 +564,7 @@ Confirming device (any browser; NO original cookie):
 **TTL & single-use**
 
 - TTL: `ACTIVATION_CONTINUATION_LIFETIME_SECONDS` = 30 minutes (`server/activation/continuationReference.ts`).
-- Single-use: the first successful consume sets `consumed_at`; a conditional `consumed_at IS NULL` update makes concurrent consumes race-safe. Replays resolve to `ALREADY_CONSUMED`.
+- Single-use & atomicity: consume and fresh-context creation run in a single transaction (`consume_activation_continuation`). Either both happen (`CONTINUED`) or neither does — if the context insert fails the transaction rolls back and the reference stays unconsumed (the exchange is retryable). Concurrent consumes serialise on a `SELECT ... FOR UPDATE` row lock, so exactly one succeeds and exactly one context is created; the loser resolves to `ALREADY_CONSUMED`. The function is `service_role`-only (execute revoked from `anon`/`authenticated`) and returns a status enum only — never the order id, continuation/context hashes, or database ids. The raw context token is generated app-side so the browser only ever receives the resulting HttpOnly cookie.
 
 **Privacy boundary**
 
@@ -1137,3 +1139,4 @@ sequenceDiagram
 | 2026-09-03 | CI workflow documented; corrected stale “not yet present” notes for `api/`, `server/`, `e2e/`, Playwright, Supabase migrations, activation verify, and order-sync foundation |
 | 2026-09-06 | Task 6: documented activation completion/finalisation flow (`POST /api/activation/complete`), completion endpoint security & repeat-completion idempotency rules, and the cross-device confirmation note (deferred continuation reference) |
 | 2026-09-07 | Task 6 corrections: completion outcome authority (a claim SUCCESS no longer overrides `NOT_ELIGIBLE` / `EMAIL_NOT_CONFIRMED` / `UNAUTHENTICATED` at finalisation; terminal-only completion lock) and implemented true cross-device confirmation via a short-lived, opaque, single-use, server-side continuation reference (`POST /api/activation/continuation` + `POST /api/activation/continue`, `activation_continuations` table) |
+| 2026-09-10 | Task 6 atomicity correction: cross-device continuation exchange (consume reference + create fresh context) is now a single transaction via the `service_role`-only `consume_activation_continuation` Postgres function — all-or-nothing with rollback-on-failure (retryable) and `SELECT ... FOR UPDATE` concurrency serialisation |
