@@ -5,13 +5,20 @@ import {
   isValidActivationContinuationReferenceFormat,
 } from '../activation/continuationReference.ts'
 import {
-  createActivationContext,
+  generateActivationContextToken,
+  hashActivationContextToken,
+} from '../activation/contextToken.ts'
+import {
+  ACTIVATION_CONTEXT_LIFETIME_MS,
   resolveActivationContextWithOrderId,
   type ActivationContextClient,
 } from './activationContextService.ts'
 
 const ACTIVATION_CONTINUATION_LIFETIME_MS =
   ACTIVATION_CONTINUATION_LIFETIME_SECONDS * 1000
+
+/** Name of the atomic consume-and-create-context Postgres function. */
+export const CONSUME_ACTIVATION_CONTINUATION_FN = 'consume_activation_continuation'
 
 export interface ActivationContinuationRow {
   id: string
@@ -28,6 +35,7 @@ export interface ActivationContinuationQueryError {
   message?: string
 }
 
+/** Client surface used to *mint* a continuation reference. */
 export interface ActivationContinuationClient {
   from(table: 'activation_continuations'): ActivationContinuationTableQuery
 }
@@ -36,39 +44,35 @@ interface ActivationContinuationTableQuery {
   insert(values: Record<string, unknown>): PromiseLike<{
     error: ActivationContinuationQueryError | null
   }>
-  select(columns: string): ActivationContinuationSelectQuery
-  update(values: Record<string, unknown>): ActivationContinuationUpdateQuery
 }
 
-interface ActivationContinuationSelectQuery {
-  eq(column: string, value: string): ActivationContinuationSingleQuery
-}
-
-interface ActivationContinuationSingleQuery {
-  maybeSingle(): PromiseLike<{
-    data: ActivationContinuationRow | null
-    error: ActivationContinuationQueryError | null
-  }>
-}
-
-interface ActivationContinuationUpdateQuery {
-  eq(column: string, value: string): ActivationContinuationUpdateFilter
-}
-
-interface ActivationContinuationUpdateFilter {
-  is(column: string, value: null): ActivationContinuationUpdateSelect
-}
-
-interface ActivationContinuationUpdateSelect {
-  select(columns: string): PromiseLike<{
-    data: ActivationContinuationRow[] | null
-    error: ActivationContinuationQueryError | null
-  }>
-}
-
-/** A client capable of both continuation and (fresh) context operations. */
-export type ActivationContinuationConsumeClient = ActivationContinuationClient &
+/** A client capable of resolving a context (for minting) and inserting a continuation row. */
+export type ActivationContinuationCreateClient = ActivationContinuationClient &
   ActivationContextClient
+
+export interface ConsumeActivationContinuationRpcArgs {
+  p_token_hash: string
+  p_email: string
+  p_now: string
+  p_context_token_hash: string
+  p_context_expires_at: string
+}
+
+/**
+ * Client surface used to *consume* a continuation reference. Consumption runs
+ * as a single server-side transaction via the `consume_activation_continuation`
+ * Postgres function so marking the reference consumed and creating the fresh
+ * activation context happen atomically (both or neither).
+ */
+export interface ActivationContinuationConsumeClient {
+  rpc(
+    fn: typeof CONSUME_ACTIVATION_CONTINUATION_FN,
+    args: ConsumeActivationContinuationRpcArgs,
+  ): PromiseLike<{
+    data: unknown
+    error: ActivationContinuationQueryError | null
+  }>
+}
 
 export class ActivationContinuationError extends Error {
   readonly supabaseCode?: string
@@ -106,7 +110,7 @@ export const defaultCreateActivationContinuationDeps: CreateActivationContinuati
   }
 
 export interface CreateActivationContinuationInput {
-  supabaseClient: ActivationContinuationConsumeClient
+  supabaseClient: ActivationContinuationCreateClient
   contextToken: string
   email: string
   now?: Date
@@ -173,12 +177,16 @@ export type ConsumeActivationContinuationResult =
   | { status: 'ALREADY_CONSUMED' }
 
 export interface ConsumeActivationContinuationDeps {
-  createContext: typeof createActivationContext
+  generateContextToken: () => string
+  hashContextToken: (token: string) => string
+  contextLifetimeMs: number
 }
 
 export const defaultConsumeActivationContinuationDeps: ConsumeActivationContinuationDeps =
   {
-    createContext: createActivationContext,
+    generateContextToken: generateActivationContextToken,
+    hashContextToken: hashActivationContextToken,
+    contextLifetimeMs: ACTIVATION_CONTEXT_LIFETIME_MS,
   }
 
 export interface ConsumeActivationContinuationInput {
@@ -186,25 +194,32 @@ export interface ConsumeActivationContinuationInput {
   reference: string
   email: string
   now?: Date
-  deps?: ConsumeActivationContinuationDeps
+  deps?: Partial<ConsumeActivationContinuationDeps>
 }
 
 /**
  * Consumes a continuation reference for an authenticated, confirmed user whose
- * email matches the mint-time binding. On success it mints a *fresh* activation
- * context for the same verified order and returns its token so the caller can
- * re-establish the HttpOnly cookie on the confirming device.
+ * email matches the mint-time binding, and creates a *fresh* activation context
+ * for the same verified order — atomically.
  *
- * Single-use is enforced with a conditional `consumed_at IS NULL` update so two
- * concurrent consumes cannot both succeed. Unknown / expired / already-consumed
- * / mismatched-email references all resolve to safe recovery states without
- * revealing which condition failed (no account or order enumeration).
+ * Marking the reference consumed and inserting the new context happen inside a
+ * single Postgres transaction (`consume_activation_continuation`). Either both
+ * succeed (CONTINUED) or neither does: if context creation fails the whole
+ * transaction rolls back, the reference stays unconsumed, and the exchange is
+ * retryable. Concurrent consumes serialise on a `SELECT ... FOR UPDATE` row
+ * lock in the function, so exactly one succeeds and exactly one context is
+ * created; the loser resolves to ALREADY_CONSUMED. Unknown / expired /
+ * already-consumed / mismatched-email references all resolve to safe recovery
+ * states without revealing which condition failed (no account/order
+ * enumeration). The raw context token is generated here so the browser can
+ * receive only the resulting HttpOnly cookie value; the database stores only
+ * its hash.
  */
 export async function consumeActivationContinuation(
   input: ConsumeActivationContinuationInput,
 ): Promise<ConsumeActivationContinuationResult> {
   const { supabaseClient, reference, email, now } = input
-  const deps = input.deps ?? defaultConsumeActivationContinuationDeps
+  const deps = { ...defaultConsumeActivationContinuationDeps, ...input.deps }
 
   if (!isValidActivationContinuationReferenceFormat(reference)) {
     return { status: 'INVALID' }
@@ -213,60 +228,59 @@ export async function consumeActivationContinuation(
   const tokenHash = hashActivationContinuationReference(reference)
   const currentTime = now ?? new Date()
 
-  const { data: row, error: selectError } = await supabaseClient
-    .from('activation_continuations')
-    .select('id, token_hash, amazon_order_id, email, created_at, expires_at, consumed_at')
-    .eq('token_hash', tokenHash)
-    .maybeSingle()
+  // Generated up front but only persisted by the transaction on CONTINUED; a
+  // non-continued outcome discards it, so no orphan/duplicate context is left.
+  const contextToken = deps.generateContextToken()
+  const contextTokenHash = deps.hashContextToken(contextToken)
+  const contextExpiresAt = new Date(currentTime.getTime() + deps.contextLifetimeMs)
 
-  if (selectError) {
-    throw new ActivationContinuationError(
-      'Failed to resolve activation continuation reference',
-      selectError.code,
-    )
-  }
+  const { data, error } = await supabaseClient.rpc(
+    CONSUME_ACTIVATION_CONTINUATION_FN,
+    {
+      p_token_hash: tokenHash,
+      p_email: normalizeEmail(email),
+      p_now: toIso(currentTime),
+      p_context_token_hash: contextTokenHash,
+      p_context_expires_at: toIso(contextExpiresAt),
+    },
+  )
 
-  if (!row) {
-    return { status: 'INVALID' }
-  }
-
-  // Bind to the confirmed account. Treated as INVALID (not a distinct status)
-  // so a mismatched user cannot probe for valid references.
-  if (row.email !== normalizeEmail(email)) {
-    return { status: 'INVALID' }
-  }
-
-  if (row.consumed_at) {
-    return { status: 'ALREADY_CONSUMED' }
-  }
-
-  if (Date.parse(row.expires_at) <= currentTime.getTime()) {
-    return { status: 'EXPIRED' }
-  }
-
-  const { data: consumedRows, error: consumeError } = await supabaseClient
-    .from('activation_continuations')
-    .update({ consumed_at: toIso(currentTime) })
-    .eq('token_hash', tokenHash)
-    .is('consumed_at', null)
-    .select('id')
-
-  if (consumeError) {
+  if (error) {
+    // Transaction failed (e.g. context insert error): the DB rolled back, so
+    // the reference is still unconsumed and the exchange can be retried.
     throw new ActivationContinuationError(
       'Failed to consume activation continuation reference',
-      consumeError.code,
+      error.code,
     )
   }
 
-  if (!consumedRows || consumedRows.length === 0) {
-    // Lost the single-use race: another request consumed it first.
-    return { status: 'ALREADY_CONSUMED' }
+  const outcome = normalizeConsumeOutcome(data)
+
+  switch (outcome) {
+    case 'CONTINUED':
+      return { status: 'CONTINUED', contextToken }
+    case 'ALREADY_CONSUMED':
+      return { status: 'ALREADY_CONSUMED' }
+    case 'EXPIRED':
+      return { status: 'EXPIRED' }
+    case 'INVALID':
+      return { status: 'INVALID' }
+    default:
+      throw new ActivationContinuationError(
+        'Unexpected activation continuation consume outcome',
+      )
+  }
+}
+
+function normalizeConsumeOutcome(data: unknown): string | null {
+  if (typeof data === 'string') {
+    return data
   }
 
-  const created = await deps.createContext(row.amazon_order_id, {
-    supabaseClient,
-    now: currentTime,
-  })
+  // Defensive: some drivers wrap a scalar function result in an array/row.
+  if (Array.isArray(data) && typeof data[0] === 'string') {
+    return data[0]
+  }
 
-  return { status: 'CONTINUED', contextToken: created.token }
+  return null
 }

@@ -4,7 +4,7 @@ import { ActivationContextError } from '../../server/services/activationContextS
 import {
   ActivationContinuationError,
   createActivationContinuation,
-  type ActivationContinuationConsumeClient,
+  type ActivationContinuationCreateClient,
 } from '../../server/services/activationContinuationService.ts'
 import { createServiceRoleClientFromEnv } from '../../server/supabase/client.ts'
 
@@ -23,13 +23,13 @@ export interface VercelLikeResponse {
 }
 
 export interface ActivationContinuationCreateHandlerDeps {
-  createClient: () => ActivationContinuationConsumeClient
+  createClient: () => ActivationContinuationCreateClient
   createContinuation: typeof createActivationContinuation
 }
 
 const defaultDeps: ActivationContinuationCreateHandlerDeps = {
   createClient: () =>
-    createServiceRoleClientFromEnv() as unknown as ActivationContinuationConsumeClient,
+    createServiceRoleClientFromEnv() as unknown as ActivationContinuationCreateClient,
   createContinuation: createActivationContinuation,
 }
 

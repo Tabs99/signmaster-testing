@@ -2,17 +2,17 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createActivationContinuation,
   consumeActivationContinuation,
+  CONSUME_ACTIVATION_CONTINUATION_FN,
   type ActivationContinuationRow,
 } from '../activationContinuationService.ts'
-import {
-  hashActivationContinuationReference,
-} from '../../activation/continuationReference.ts'
+import { hashActivationContinuationReference } from '../../activation/continuationReference.ts'
+import { hashActivationContextToken } from '../../activation/contextToken.ts'
 
 const ORDER_ID = '205-1234567-1234567'
 const EMAIL = 'Owner@Example.Invalid'
 const NORMALISED_EMAIL = 'owner@example.invalid'
 const REFERENCE = 'cross-device-reference-abcdefghijklmnopqrstuvwxyz012345'
-const NOW = new Date('2026-09-07T10:00:00.000Z')
+const NOW = new Date('2026-09-10T10:00:00.000Z')
 
 function makeRow(overrides: Partial<ActivationContinuationRow> = {}): ActivationContinuationRow {
   return {
@@ -20,77 +20,33 @@ function makeRow(overrides: Partial<ActivationContinuationRow> = {}): Activation
     token_hash: hashActivationContinuationReference(REFERENCE),
     amazon_order_id: ORDER_ID,
     email: NORMALISED_EMAIL,
-    created_at: '2026-09-07T09:50:00.000Z',
-    expires_at: '2026-09-07T10:20:00.000Z',
+    created_at: '2026-09-10T09:50:00.000Z',
+    expires_at: '2026-09-10T10:20:00.000Z',
     consumed_at: null,
     ...overrides,
   }
 }
 
-/**
- * Minimal fake of the Supabase query surface the service uses. Records inserts
- * and supports select().eq().maybeSingle() and update().eq().is().select().
- */
-function makeClient(options: {
-  row?: ActivationContinuationRow | null
-  consumeAffects?: number
-} = {}) {
+// --- Create ---------------------------------------------------------------
+
+function makeCreateClient() {
   const inserted: Record<string, unknown>[] = []
-  const contexts: string[] = []
-  let consumeAffected = options.consumeAffects ?? 1
-
-  const client = {
+  return {
     inserted,
-    contexts,
-    from(table: string) {
-      if (table === 'activation_continuations') {
-        return {
-          insert(values: Record<string, unknown>) {
-            inserted.push(values)
-            return Promise.resolve({ error: null })
-          },
-          select() {
-            return {
-              eq() {
-                return {
-                  maybeSingle() {
-                    return Promise.resolve({ data: options.row ?? null, error: null })
-                  },
-                }
-              },
-            }
-          },
-          update() {
-            return {
-              eq() {
-                return {
-                  is() {
-                    return {
-                      select() {
-                        const affected =
-                          consumeAffected > 0 ? [{ id: 'continuation-1' }] : []
-                        consumeAffected = 0
-                        return Promise.resolve({ data: affected, error: null })
-                      },
-                    }
-                  },
-                }
-              },
-            }
-          },
-        }
+    from() {
+      return {
+        insert(values: Record<string, unknown>) {
+          inserted.push(values)
+          return Promise.resolve({ error: null })
+        },
       }
-
-      throw new Error(`unexpected table ${table}`)
     },
   }
-
-  return client
 }
 
 describe('createActivationContinuation', () => {
   it('mints an opaque reference bound to the order and normalised email', async () => {
-    const client = makeClient()
+    const client = makeCreateClient()
     const resolveContextWithOrderId = vi
       .fn()
       .mockResolvedValue({ status: 'VALID', amazonOrderId: ORDER_ID })
@@ -117,7 +73,7 @@ describe('createActivationContinuation', () => {
   })
 
   it('returns NO_CONTEXT when there is no valid context to hand off', async () => {
-    const client = makeClient()
+    const client = makeCreateClient()
     const result = await createActivationContinuation({
       supabaseClient: client as never,
       contextToken: 'ctx-token',
@@ -134,94 +90,217 @@ describe('createActivationContinuation', () => {
   })
 })
 
-describe('consumeActivationContinuation', () => {
-  function consume(client: unknown, overrides: Partial<Parameters<typeof consumeActivationContinuation>[0]> = {}) {
-    const createContext = vi
-      .fn()
-      .mockResolvedValue({ token: 'fresh-context-token', expiresAt: NOW })
-    return {
-      createContext,
-      promise: consumeActivationContinuation({
-        supabaseClient: client as never,
-        reference: REFERENCE,
-        email: EMAIL,
-        now: NOW,
-        deps: { createContext },
-        ...overrides,
-      }),
-    }
+// --- Consume (atomic RPC) -------------------------------------------------
+
+interface FakeContextRow {
+  token_hash: string
+  amazon_order_id: string
+  expires_at: string
+}
+
+/**
+ * Stateful fake of the `consume_activation_continuation` Postgres function that
+ * mirrors its transactional contract:
+ *  - row lock + conditional consume (single-use, concurrency-safe)
+ *  - all-or-nothing: on a context-insert failure nothing is consumed/created
+ * Because the fake mutates state synchronously inside `rpc`, two overlapping
+ * consumes serialise exactly as `SELECT ... FOR UPDATE` would in Postgres.
+ */
+function makeRpcDb(initialRow: ActivationContinuationRow | null) {
+  const state = { row: initialRow ? { ...initialRow } : null }
+  const contexts: FakeContextRow[] = []
+  let failInsert = false
+  let rpcCalls = 0
+
+  return {
+    contexts,
+    get row() {
+      return state.row
+    },
+    get rpcCalls() {
+      return rpcCalls
+    },
+    failNextInserts(value: boolean) {
+      failInsert = value
+    },
+    rpc(fn: string, args: Record<string, string>) {
+      rpcCalls += 1
+      expect(fn).toBe(CONSUME_ACTIVATION_CONTINUATION_FN)
+      const row = state.row
+
+      if (!row) {
+        return Promise.resolve({ data: 'INVALID', error: null })
+      }
+      if (row.email !== args.p_email) {
+        return Promise.resolve({ data: 'INVALID', error: null })
+      }
+      if (row.consumed_at) {
+        return Promise.resolve({ data: 'ALREADY_CONSUMED', error: null })
+      }
+      if (Date.parse(row.expires_at) <= Date.parse(args.p_now)) {
+        return Promise.resolve({ data: 'EXPIRED', error: null })
+      }
+
+      // Transaction body: consume + create context, or roll back on failure.
+      if (failInsert) {
+        return Promise.resolve({
+          data: null,
+          error: { code: 'XX000', message: 'context insert failed' },
+        })
+      }
+
+      row.consumed_at = args.p_now
+      contexts.push({
+        token_hash: args.p_context_token_hash,
+        amazon_order_id: row.amazon_order_id,
+        expires_at: args.p_context_expires_at,
+      })
+      return Promise.resolve({ data: 'CONTINUED', error: null })
+    },
   }
+}
 
-  it('consumes a valid reference and mints a fresh context for the same order', async () => {
-    const client = makeClient({ row: makeRow() })
-    const { createContext, promise } = consume(client)
-
-    await expect(promise).resolves.toEqual({
-      status: 'CONTINUED',
-      contextToken: 'fresh-context-token',
-    })
-    expect(createContext).toHaveBeenCalledWith(
-      ORDER_ID,
-      expect.objectContaining({ supabaseClient: client }),
-    )
-  })
-
-  it('rejects an unknown reference safely as INVALID', async () => {
-    const client = makeClient({ row: null })
-    const { createContext, promise } = consume(client)
-
-    await expect(promise).resolves.toEqual({ status: 'INVALID' })
-    expect(createContext).not.toHaveBeenCalled()
-  })
-
-  it('rejects a badly formatted reference as INVALID without a lookup', async () => {
-    const client = makeClient({ row: makeRow() })
-    const createContext = vi.fn()
+describe('consumeActivationContinuation (atomic)', () => {
+  it('rejects a badly formatted reference without touching the database', async () => {
+    const db = makeRpcDb(makeRow())
     await expect(
       consumeActivationContinuation({
-        supabaseClient: client as never,
+        supabaseClient: db as never,
         reference: 'short',
         email: EMAIL,
         now: NOW,
-        deps: { createContext },
       }),
     ).resolves.toEqual({ status: 'INVALID' })
-    expect(createContext).not.toHaveBeenCalled()
+    expect(db.rpcCalls).toBe(0)
+    expect(db.contexts).toHaveLength(0)
+  })
+
+  it('consumes a valid reference and creates exactly one fresh context for the same order', async () => {
+    const db = makeRpcDb(makeRow())
+
+    const result = await consumeActivationContinuation({
+      supabaseClient: db as never,
+      reference: REFERENCE,
+      email: EMAIL,
+      now: NOW,
+    })
+
+    expect(result.status).toBe('CONTINUED')
+    if (result.status !== 'CONTINUED') return
+
+    expect(db.row?.consumed_at).toBe(NOW.toISOString())
+    expect(db.contexts).toHaveLength(1)
+    expect(db.contexts[0].amazon_order_id).toBe(ORDER_ID)
+    // The DB stores only the hash of the returned raw context token.
+    expect(db.contexts[0].token_hash).toBe(hashActivationContextToken(result.contextToken))
+    expect(db.contexts[0].token_hash).not.toBe(result.contextToken)
+  })
+
+  it('rejects an unknown reference safely as INVALID and creates no context', async () => {
+    const db = makeRpcDb(null)
+    await expect(
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: EMAIL,
+        now: NOW,
+      }),
+    ).resolves.toEqual({ status: 'INVALID' })
+    expect(db.contexts).toHaveLength(0)
   })
 
   it('does not let a different authenticated user consume the reference', async () => {
-    const client = makeClient({ row: makeRow() })
-    const { createContext, promise } = consume(client, {
-      email: 'someone-else@example.invalid',
+    const db = makeRpcDb(makeRow())
+    await expect(
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: 'someone-else@example.invalid',
+        now: NOW,
+      }),
+    ).resolves.toEqual({ status: 'INVALID' })
+    expect(db.row?.consumed_at).toBeNull()
+    expect(db.contexts).toHaveLength(0)
+  })
+
+  it('rejects an already-consumed reference (replay) with no new context', async () => {
+    const db = makeRpcDb(makeRow({ consumed_at: '2026-09-10T09:59:00.000Z' }))
+    await expect(
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: EMAIL,
+        now: NOW,
+      }),
+    ).resolves.toEqual({ status: 'ALREADY_CONSUMED' })
+    expect(db.contexts).toHaveLength(0)
+  })
+
+  it('rejects an expired reference with no consume/context', async () => {
+    const db = makeRpcDb(makeRow({ expires_at: '2026-09-10T09:00:00.000Z' }))
+    await expect(
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: EMAIL,
+        now: NOW,
+      }),
+    ).resolves.toEqual({ status: 'EXPIRED' })
+    expect(db.row?.consumed_at).toBeNull()
+    expect(db.contexts).toHaveLength(0)
+  })
+
+  it('rolls back on a context-creation failure: reference stays unconsumed and retry succeeds', async () => {
+    const db = makeRpcDb(makeRow())
+    db.failNextInserts(true)
+
+    await expect(
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: EMAIL,
+        now: NOW,
+      }),
+    ).rejects.toThrow(/Failed to consume activation continuation/)
+
+    // Nothing consumed, no context created — the exchange is still retryable.
+    expect(db.row?.consumed_at).toBeNull()
+    expect(db.contexts).toHaveLength(0)
+
+    db.failNextInserts(false)
+    const retry = await consumeActivationContinuation({
+      supabaseClient: db as never,
+      reference: REFERENCE,
+      email: EMAIL,
+      now: NOW,
     })
 
-    await expect(promise).resolves.toEqual({ status: 'INVALID' })
-    expect(createContext).not.toHaveBeenCalled()
+    expect(retry.status).toBe('CONTINUED')
+    expect(db.row?.consumed_at).toBe(NOW.toISOString())
+    expect(db.contexts).toHaveLength(1)
   })
 
-  it('rejects an already-consumed reference (replay)', async () => {
-    const client = makeClient({ row: makeRow({ consumed_at: '2026-09-07T09:59:00.000Z' }) })
-    const { createContext, promise } = consume(client)
+  it('serialises concurrent consumes: exactly one CONTINUED, one ALREADY_CONSUMED, one context', async () => {
+    const db = makeRpcDb(makeRow())
 
-    await expect(promise).resolves.toEqual({ status: 'ALREADY_CONSUMED' })
-    expect(createContext).not.toHaveBeenCalled()
-  })
+    const [a, b] = await Promise.all([
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: EMAIL,
+        now: NOW,
+      }),
+      consumeActivationContinuation({
+        supabaseClient: db as never,
+        reference: REFERENCE,
+        email: EMAIL,
+        now: NOW,
+      }),
+    ])
 
-  it('rejects an expired reference', async () => {
-    const client = makeClient({
-      row: makeRow({ expires_at: '2026-09-07T09:00:00.000Z' }),
-    })
-    const { createContext, promise } = consume(client)
-
-    await expect(promise).resolves.toEqual({ status: 'EXPIRED' })
-    expect(createContext).not.toHaveBeenCalled()
-  })
-
-  it('treats a lost single-use race as ALREADY_CONSUMED', async () => {
-    const client = makeClient({ row: makeRow(), consumeAffects: 0 })
-    const { createContext, promise } = consume(client)
-
-    await expect(promise).resolves.toEqual({ status: 'ALREADY_CONSUMED' })
-    expect(createContext).not.toHaveBeenCalled()
+    const statuses = [a.status, b.status].sort()
+    expect(statuses).toEqual(['ALREADY_CONSUMED', 'CONTINUED'])
+    expect(db.contexts).toHaveLength(1)
+    expect(db.contexts[0].amazon_order_id).toBe(ORDER_ID)
   })
 })
