@@ -38,6 +38,10 @@ describe('CreateAccountScreen', () => {
       user: null,
       signOut: vi.fn(),
     })
+    mockUseActivationClaimWhenReady.mockReturnValue({
+      state: { kind: 'idle' },
+      retry: vi.fn(),
+    })
   })
 
   it('renders all form fields, labels, and CTA button correctly', async () => {
@@ -47,6 +51,9 @@ describe('CreateAccountScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('Purchase verified')).toBeInTheDocument()
     })
+    expect(screen.queryByTestId('brand-lockup-gold-divider')).not.toBeInTheDocument()
+    expect(screen.getByTestId('create-account-brand-spacing')).toHaveClass('mb-[18px]')
+    expect(screen.getByTestId('create-account-brand-spacing')).toHaveClass('max-[667px]:mb-3')
     expect(
       screen.getByRole('heading', { name: 'Create your SignMaster account' }),
     ).toBeInTheDocument()
@@ -277,6 +284,24 @@ describe('CreateAccountScreen', () => {
     await user.click(continueButton)
 
     expect(onEnterApp).toHaveBeenCalledOnce()
+  })
+
+  it('does not render the brand gold divider on the activated confirmation screen', async () => {
+    mockUseActivationClaimWhenReady.mockReturnValue({
+      state: { kind: 'outcome', outcome: 'success' },
+      retry: vi.fn(),
+    })
+
+    render(<CreateAccountScreen />)
+
+    expect(
+      await screen.findByText("You're in. SignMaster is activated"),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('brand-lockup-gold-divider')).not.toBeInTheDocument()
+    expect(screen.getByTestId('activation-complete-brand-spacing')).toHaveClass('mb-[18px]')
+    expect(screen.getByTestId('activation-complete-brand-spacing')).toHaveClass(
+      'max-[667px]:mb-3',
+    )
   })
 
   it('requests claim when context and confirmed auth are ready', async () => {

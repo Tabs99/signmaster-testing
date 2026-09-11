@@ -32,7 +32,7 @@ describe('ActivationClaimResult', () => {
     renderResult({ kind: 'outcome', outcome: 'success' }, { complete })
 
     expect(
-      screen.getByText("You're in — SignMaster is activated"),
+      screen.getByText("You're in. SignMaster is activated"),
     ).toBeInTheDocument()
     expect(document.querySelector('[data-claim-outcome="success"]')).not.toBeNull()
 
@@ -89,7 +89,7 @@ describe('ActivationClaimResult', () => {
       expect(screen.getByText("We couldn't confirm your access")).toBeInTheDocument()
     })
     expect(screen.queryByText('Your SignMaster access is active')).not.toBeInTheDocument()
-    expect(screen.queryByText("You're in — SignMaster is activated")).not.toBeInTheDocument()
+    expect(screen.queryByText("You're in. SignMaster is activated")).not.toBeInTheDocument()
     expect(
       document.querySelector('[data-continuation-view="finalize_not_eligible"]'),
     ).not.toBeNull()

@@ -363,7 +363,12 @@ export default function CreateAccountScreen({
     return (
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
-          <BrandLockup variant="desktop" />
+          <div
+            data-testid="activation-complete-brand-spacing"
+            className="mb-[18px] flex w-full flex-col items-center max-[667px]:mb-3"
+          >
+            <BrandLockup variant="desktop" showDivider={false} />
+          </div>
           <ActivationClaimResult
             claimState={claimState}
             onRetryClaim={retryClaim}
@@ -406,7 +411,12 @@ export default function CreateAccountScreen({
   return (
     <PageShell>
       <div className="flex w-full max-w-[420px] flex-col items-center">
-        <BrandLockup variant="desktop" />
+        <div
+          data-testid="create-account-brand-spacing"
+          className="mb-[18px] flex w-full flex-col items-center max-[667px]:mb-3"
+        >
+          <BrandLockup variant="desktop" showDivider={false} />
+        </div>
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
           {contextError ? (
