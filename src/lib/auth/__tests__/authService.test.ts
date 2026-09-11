@@ -6,6 +6,8 @@ function createMockClient() {
     auth: {
       signUp: vi.fn(),
       signInWithPassword: vi.fn(),
+      resetPasswordForEmail: vi.fn(),
+      updateUser: vi.fn(),
       signOut: vi.fn(),
       getSession: vi.fn(),
       getUser: vi.fn(),
@@ -168,5 +170,170 @@ describe('authService', () => {
     const result = await service.signIn('alex@example.invalid', 'Secure123!')
 
     expect(result.kind).toBe('success')
+  })
+
+  describe('requestPasswordReset', () => {
+    it('returns sent and forwards the redirect URL on success', async () => {
+      const client = createMockClient()
+      client.auth.resetPasswordForEmail.mockResolvedValue({ data: {}, error: null })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.requestPasswordReset('alex@example.invalid', {
+        redirectTo: 'https://app.example/reset-password',
+      })
+
+      expect(result).toEqual({ kind: 'sent' })
+      expect(client.auth.resetPasswordForEmail).toHaveBeenCalledWith('alex@example.invalid', {
+        redirectTo: 'https://app.example/reset-password',
+      })
+    })
+
+    it('trims the email before requesting a reset', async () => {
+      const client = createMockClient()
+      client.auth.resetPasswordForEmail.mockResolvedValue({ data: {}, error: null })
+
+      const service = createAuthService({ getClient: () => client as never })
+      await service.requestPasswordReset('  spaced@example.invalid  ')
+
+      expect(client.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+        'spaced@example.invalid',
+        undefined,
+      )
+    })
+
+    it('collapses an unexpected error to sent (never reveals account existence)', async () => {
+      const client = createMockClient()
+      client.auth.resetPasswordForEmail.mockResolvedValue({
+        data: {},
+        error: { message: 'User not found', status: 400 },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.requestPasswordReset('missing@example.invalid')
+
+      expect(result).toEqual({ kind: 'sent' })
+    })
+
+    it('maps rate-limit errors to rate_limited', async () => {
+      const client = createMockClient()
+      client.auth.resetPasswordForEmail.mockResolvedValue({
+        data: {},
+        error: { message: 'Email rate limit exceeded', status: 429 },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.requestPasswordReset('alex@example.invalid')
+
+      expect(result).toEqual({ kind: 'rate_limited' })
+    })
+
+    it('maps network failures to connection_error', async () => {
+      const client = createMockClient()
+      client.auth.resetPasswordForEmail.mockRejectedValue(
+        new TypeError('Failed to fetch'),
+      )
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.requestPasswordReset('alex@example.invalid')
+
+      expect(result).toEqual({ kind: 'connection_error' })
+    })
+
+    it('maps server errors to service_unavailable', async () => {
+      const client = createMockClient()
+      client.auth.resetPasswordForEmail.mockResolvedValue({
+        data: {},
+        error: { message: 'Internal error', status: 503 },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.requestPasswordReset('alex@example.invalid')
+
+      expect(result).toEqual({ kind: 'service_unavailable' })
+    })
+  })
+
+  describe('updatePassword', () => {
+    it('returns success with the mapped user', async () => {
+      const client = createMockClient()
+      client.auth.updateUser.mockResolvedValue({
+        data: {
+          user: {
+            id: 'user-9',
+            email: 'alex@example.invalid',
+            email_confirmed_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+        error: null,
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.updatePassword('NewSecure123!')
+
+      expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'NewSecure123!' })
+      expect(result).toEqual({
+        kind: 'success',
+        user: { id: 'user-9', email: 'alex@example.invalid', emailConfirmed: true },
+      })
+    })
+
+    it('maps a missing recovery session to invalid_recovery_session', async () => {
+      const client = createMockClient()
+      client.auth.updateUser.mockResolvedValue({
+        data: { user: null },
+        error: { name: 'AuthSessionMissingError', message: 'Auth session missing!' },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.updatePassword('NewSecure123!')
+
+      expect(result).toEqual({ kind: 'invalid_recovery_session' })
+    })
+
+    it('maps an expired token to invalid_recovery_session', async () => {
+      const client = createMockClient()
+      client.auth.updateUser.mockResolvedValue({
+        data: { user: null },
+        error: { message: 'Token has expired', status: 401 },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.updatePassword('NewSecure123!')
+
+      expect(result).toEqual({ kind: 'invalid_recovery_session' })
+    })
+
+    it('maps weak-password errors to weak_password', async () => {
+      const client = createMockClient()
+      client.auth.updateUser.mockResolvedValue({
+        data: { user: null },
+        error: { message: 'Password should be at least 6 characters', status: 422 },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.updatePassword('short')
+
+      expect(result).toEqual({ kind: 'weak_password' })
+    })
+
+    it('maps network failures to connection_error', async () => {
+      const client = createMockClient()
+      client.auth.updateUser.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.updatePassword('NewSecure123!')
+
+      expect(result).toEqual({ kind: 'connection_error' })
+    })
+
+    it('treats a success response with no user as an invalid recovery session', async () => {
+      const client = createMockClient()
+      client.auth.updateUser.mockResolvedValue({ data: { user: null }, error: null })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.updatePassword('NewSecure123!')
+
+      expect(result).toEqual({ kind: 'invalid_recovery_session' })
+    })
   })
 })

@@ -23,12 +23,13 @@ vi.mock('../../../lib/auth/authService', () => ({
 }))
 
 function AuthProbe() {
-  const { isInitializing, user, isAuthenticated } = useAuthContext()
+  const { isInitializing, user, isAuthenticated, isPasswordRecovery } = useAuthContext()
 
   return (
     <div>
       <p>initializing:{String(isInitializing)}</p>
       <p>authenticated:{String(isAuthenticated)}</p>
+      <p>recovery:{String(Boolean(isPasswordRecovery))}</p>
       <p>email:{user?.email ?? 'none'}</p>
     </div>
   )
@@ -208,6 +209,42 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByText('initializing:false')).toBeInTheDocument()
+    })
+  })
+
+  it('flags a password recovery session when PASSWORD_RECOVERY fires', async () => {
+    mockGetSession.mockResolvedValue(null)
+
+    let authListener: ((event: string, session: unknown) => void) | undefined
+    mockOnAuthStateChange.mockImplementation((listener) => {
+      authListener = listener
+      return { data: { subscription: { unsubscribe: mockUnsubscribe } } }
+    })
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('recovery:false')).toBeInTheDocument()
+    })
+
+    act(() => {
+      authListener?.('PASSWORD_RECOVERY', {
+        user: {
+          id: 'recovery-user',
+          email: 'recovery@example.invalid',
+          email_confirmed_at: '2026-01-01T00:00:00.000Z',
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('recovery:true')).toBeInTheDocument()
+      expect(screen.getByText('email:recovery@example.invalid')).toBeInTheDocument()
+      expect(screen.getByText('authenticated:true')).toBeInTheDocument()
     })
   })
 
