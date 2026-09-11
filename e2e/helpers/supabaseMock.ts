@@ -169,6 +169,21 @@ export async function mockSupabasePasswordRecover(
   })
 }
 
+/**
+ * Mocks Supabase's sign-out endpoint so `authService.signOut()` (used by the
+ * B10 "Use another account" action) resolves cleanly and supabase-js clears the
+ * persisted session from localStorage without a real network call.
+ */
+export async function mockSupabaseSignOut(page: Page) {
+  await page.route('**/auth/v1/logout**', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({ status: 204, contentType: 'application/json', body: '' })
+  })
+}
+
 export async function mockSupabaseSignInSuccess(page: Page, email: string) {
   await page.route('**/auth/v1/token**', async (route) => {
     if (route.request().method() !== 'POST') {

@@ -99,6 +99,32 @@ test.describe('SignMaster password reset', () => {
     ).toBeVisible()
   })
 
+  test('Reset then ACTIVE entitlement lands on /app with access granted', async ({ page }) => {
+    // A returning user who already owns an ACTIVE entitlement resets their
+    // password via genuine recovery. The shared post-auth resolver must grant
+    // protected access — password recovery is not activation authority, but the
+    // backend entitlement is.
+    await mockContextResolve(page, 'NONE')
+    await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL)
+    await mockEntitlement(page, 'ACTIVE')
+
+    await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
+
+    await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible()
+    await page.getByLabel('New Password', { exact: true }).fill(NEW_PASSWORD)
+    await page.getByLabel('Confirm New Password').fill(NEW_PASSWORD)
+    await page.getByRole('button', { name: 'Update password' }).click()
+
+    await expect(page.getByText('Password updated')).toBeVisible()
+    await page.getByRole('button', { name: 'Continue' }).click()
+
+    await expect(page).toHaveURL(/\/app$/)
+    await expect(page.getByText('SignMaster access is active.')).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Finish activating SignMaster' }),
+    ).toHaveCount(0)
+  })
+
   test('Normal authenticated session cannot use the reset form', async ({ page }) => {
     // Signed in normally (persisted session), no recovery entry: the reset form
     // must not appear — this is not the recovery route for a normal session.

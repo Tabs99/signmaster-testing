@@ -161,4 +161,65 @@ test.describe('SignMaster cross-device activation continuation', () => {
 
     await expect(page.getByText('Sign in to finish activating')).toBeVisible()
   })
+
+  test('wrong-email / invalid reference shows safe recovery without enumeration', async ({
+    page,
+  }) => {
+    // The confirmed session's email does not match the reference binding →
+    // server resolves INVALID. The UI must show the same neutral recovery state
+    // as any other unusable link, leaking no account/order existence.
+    await seedConfirmedSession(page)
+    await mockContinue(page, 'INVALID')
+
+    await page.goto(`/activation/continue?ref=${REFERENCE}`)
+
+    await expect(page.getByText("This activation link can't be used")).toBeVisible()
+    await expect(page.getByText(CROSS_DEVICE_EMAIL)).toHaveCount(0)
+    await expect(page.getByText(REFERENCE)).toHaveCount(0)
+  })
+
+  test('transient continue failure is retryable and recovers to CONTINUED', async ({ page }) => {
+    // A 5xx during the exchange must fail closed to a retryable state (the
+    // reference is not burned) and succeed on retry — no protected access is
+    // granted on the transient error.
+    await seedConfirmedSession(page)
+    await mockContextResolve(page, 'VALID')
+    await mockClaim(page, 'SUCCESS')
+    await mockComplete(page, 'COMPLETED')
+
+    let attempts = 0
+    await page.route('**/api/activation/continue', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      attempts += 1
+      if (attempts === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'ERROR' }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: {
+          'Set-Cookie':
+            'sm_activation_ctx=fresh-cross-device-token; Path=/; HttpOnly; SameSite=Lax; Max-Age=900',
+        },
+        body: JSON.stringify({ status: 'CONTINUED' }),
+      })
+    })
+
+    await page.goto(`/activation/continue?ref=${REFERENCE}`)
+
+    await expect(page.getByRole('heading', { name: "We couldn't finish just now" })).toBeVisible()
+    await page.getByRole('button', { name: 'Try again' }).click()
+
+    await expect(page).toHaveURL(/\/create-account$/)
+    await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
+    expect(attempts).toBe(2)
+  })
 })

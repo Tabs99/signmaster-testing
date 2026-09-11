@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   mockSupabaseAuthBootstrap,
   mockSupabaseSignInSuccess,
+  mockSupabaseSignOut,
   seedConfirmedSession,
 } from './helpers/supabaseMock'
 
@@ -293,5 +294,69 @@ test.describe('SignMaster entitlement-aware protected routing', () => {
     await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
     await expect(page.getByRole('heading', { name: B10_HEADING })).toHaveCount(0)
     expect(contextCalls).toBe(0)
+  })
+
+  test('a malformed entitlement response fails closed (no access, no B10)', async ({ page }) => {
+    await seedConfirmedSession(page, APP_EMAIL)
+    await mockContext(page, 'NONE')
+    // 200 OK but an unrecognised payload — must never be mistaken for a
+    // definitive ACTIVE or NONE. The client collapses it to a transient
+    // failure and the guard shows the fail-closed retry screen.
+    await page.route('**/api/entitlement/me', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ unexpected: 'shape', status: 'WAT' }),
+      })
+    })
+
+    await page.goto('/app')
+
+    await expect(
+      page.getByRole('heading', { name: "We couldn't check your access" }),
+    ).toBeVisible()
+    await expect(page.getByText(ACCESS_TEXT)).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: B10_HEADING })).toHaveCount(0)
+  })
+
+  test('B10 "Use another account" signs out and returns to sign in', async ({ page }) => {
+    await seedConfirmedSession(page, APP_EMAIL)
+    await mockEntitlement(page, () => 'NONE')
+    await mockContext(page, 'NONE')
+    await mockSupabaseSignOut(page)
+
+    await page.goto('/app')
+    await expect(page.getByRole('heading', { name: B10_HEADING })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Use another account' }).click()
+
+    await expect(page).toHaveURL(/\/sign-in$/)
+    await expect(page.getByRole('heading', { name: 'Sign in to SignMaster' })).toBeVisible()
+
+    // The Supabase session was cleared by sign-out (no persisted auth token).
+    const persistedSession = await page.evaluate(() =>
+      window.localStorage.getItem('sb-127-auth-token'),
+    )
+    expect(persistedSession).toBeNull()
+  })
+
+  test('B10 does not flash while an ACTIVE entitlement is still resolving', async ({ page }) => {
+    await seedConfirmedSession(page, APP_EMAIL)
+    await mockContext(page, 'NONE')
+    await mockEntitlement(page, () => 'ACTIVE', { delayMs: 700 })
+
+    await page.goto('/app')
+
+    // While entitlement is in flight only the neutral loading screen shows —
+    // never the activation-required (B10) state for an about-to-be-active user.
+    await expect(page.getByText('Checking your access…')).toBeVisible()
+    await expect(page.getByRole('heading', { name: B10_HEADING })).toHaveCount(0)
+
+    await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
+    await expect(page.getByRole('heading', { name: B10_HEADING })).toHaveCount(0)
   })
 })
