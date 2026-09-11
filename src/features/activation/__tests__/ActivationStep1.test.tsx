@@ -158,6 +158,7 @@ describe('ActivationStep1', () => {
       VALIDATION_MESSAGES.orderIdRequired,
     )
     expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
 
     await user.type(field, '205-12345')
     await user.tab()
@@ -166,6 +167,7 @@ describe('ActivationStep1', () => {
       VALIDATION_MESSAGES.orderIdInvalid,
     )
     expect(field).toHaveValue('205-12345')
+    expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
   })
 
   it('submits with Enter and does not call the verify API or write localStorage', async () => {

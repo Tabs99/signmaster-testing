@@ -3,11 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import OrderIdField from '../OrderIdField'
+import { isValidOrderId, VALIDATION_MESSAGES } from '../../utils/validation'
 
 const FORMATTED_ORDER_ID = '205-1234567-1234567'
 const RAW_ORDER_ID_DIGITS = '20512345671234567'
 
-function renderOrderIdField(initialValue = '') {
+function renderOrderIdField(
+  initialValue = '',
+  options: { showError?: boolean } = {},
+) {
   function Harness() {
     const [value, setValue] = useState(initialValue)
 
@@ -16,13 +20,38 @@ function renderOrderIdField(initialValue = '') {
         value={value}
         onChange={setValue}
         onOpenHelp={vi.fn()}
-        showError={false}
+        showError={options.showError ?? false}
       />
     )
   }
 
   render(<Harness />)
   return screen.getByLabelText('Amazon order number') as HTMLInputElement
+}
+
+function renderOrderIdFieldWithBlurValidation() {
+  function Harness() {
+    const [value, setValue] = useState('')
+    const [fieldTouched, setFieldTouched] = useState(false)
+    const showError = fieldTouched && !isValidOrderId(value)
+
+    return (
+      <OrderIdField
+        value={value}
+        onChange={setValue}
+        onOpenHelp={vi.fn()}
+        showError={showError}
+        onBlur={() => setFieldTouched(true)}
+      />
+    )
+  }
+
+  render(<Harness />)
+  return screen.getByLabelText('Amazon order number') as HTMLInputElement
+}
+
+function expectShowMeWhereVisible() {
+  expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
 }
 
 function fireRepeatedDigit(field: HTMLInputElement, digit: string, times: number) {
@@ -219,6 +248,63 @@ describe('OrderIdField', () => {
 
       expect(field).toHaveValue(FORMATTED_ORDER_ID)
       expect(screen.getByText('17/17 digits')).toBeInTheDocument()
+    })
+  })
+
+  describe('Show me where help link visibility', () => {
+    it('shows the help link on an untouched field', () => {
+      renderOrderIdField()
+      expectShowMeWhereVisible()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('keeps the help link visible when empty-field validation is shown after blur', async () => {
+      const user = userEvent.setup()
+      const field = renderOrderIdFieldWithBlurValidation()
+
+      expectShowMeWhereVisible()
+      await user.click(field)
+      fireEvent.blur(field)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        VALIDATION_MESSAGES.orderIdRequired,
+      )
+      expectShowMeWhereVisible()
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+    })
+
+    it('keeps the help link visible for a partial invalid order ID with validation shown', () => {
+      renderOrderIdField('205-12345', { showError: true })
+
+      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdInvalid)
+      expectShowMeWhereVisible()
+    })
+
+    it('keeps the help link visible after entering a valid order ID following validation', async () => {
+      const user = userEvent.setup()
+      const field = renderOrderIdFieldWithBlurValidation()
+
+      await user.click(field)
+      fireEvent.blur(field)
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        VALIDATION_MESSAGES.orderIdRequired,
+      )
+
+      await user.type(field, RAW_ORDER_ID_DIGITS)
+
+      expect(field).toHaveValue(FORMATTED_ORDER_ID)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expectShowMeWhereVisible()
+    })
+
+    it('describes the input with both error and hint when validation is shown', () => {
+      const field = renderOrderIdField('', { showError: true })
+
+      const describedBy = field.getAttribute('aria-describedby') ?? ''
+      const ids = describedBy.split(/\s+/).filter(Boolean)
+      expect(ids).toHaveLength(2)
+      expect(document.getElementById(ids[0])).toHaveAttribute('role', 'alert')
+      expect(document.getElementById(ids[1])).toHaveTextContent(/Show me where/)
     })
   })
 })

@@ -106,11 +106,7 @@ export default function OrderIdField({
         disabled={disabled}
         aria-disabled={disabled}
         aria-invalid={showError && Boolean(errorMessage)}
-        aria-describedby={
-          [errorMessage ? errorId : null, !errorMessage ? hintId : null]
-            .filter(Boolean)
-            .join(' ') || undefined
-        }
+        aria-describedby={[errorMessage ? errorId : null, hintId].filter(Boolean).join(' ') || undefined}
         onChange={(event) => onChange(formatOrderId(event.target.value))}
         onKeyDown={handleKeyDown}
         onPaste={(event) => {
@@ -124,21 +120,19 @@ export default function OrderIdField({
         }`}
       />
 
-      {errorMessage ? (
-        <FieldError id={errorId}>{errorMessage}</FieldError>
-      ) : (
-        <p id={hintId} className="mt-2.5 text-[13px] leading-[1.55] text-white/[0.55]">
-          Find it in your Amazon confirmation email or order details.{' '}
-          <button
-            ref={helpButtonRef}
-            type="button"
-            onClick={onOpenHelp}
-            className="keyline-text-action inline min-h-0 p-0 text-[13px] font-medium text-white underline decoration-white/45"
-          >
-            Show me where
-          </button>
-        </p>
-      )}
+      {errorMessage ? <FieldError id={errorId}>{errorMessage}</FieldError> : null}
+
+      <p id={hintId} className="mt-2.5 text-[13px] leading-[1.55] text-white/[0.55]">
+        Find it in your Amazon confirmation email or order details.{' '}
+        <button
+          ref={helpButtonRef}
+          type="button"
+          onClick={onOpenHelp}
+          className="keyline-text-action inline min-h-0 p-0 text-[13px] font-medium text-white underline decoration-white/45"
+        >
+          Show me where
+        </button>
+      </p>
     </div>
   )
 }
