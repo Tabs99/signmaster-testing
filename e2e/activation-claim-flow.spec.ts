@@ -8,6 +8,25 @@ const FIXTURE_ORDER_ID = '205-1234567-1234567'
 const AUTH_TEST_EMAIL = 'claim-e2e-fixture@example.invalid'
 const AUTH_TEST_PASSWORD = 'Secure123!'
 
+function mockEntitlementNone(page: Page) {
+  // After the sign-in/create-account correction, sign-in no longer claims
+  // inline. Authentication hands off to the shared `/app` resolver, which reads
+  // entitlement first. A returning user still mid-activation resolves to NONE,
+  // so the resolver routes to the resume path (`/create-account`) where the
+  // claim runs — preserving Task 5 claim ownership/idempotency.
+  return page.route('**/api/entitlement/me', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'NONE' }),
+    })
+  })
+}
+
 function mockActivationContextRoutes(page: Page, resolveStatus: 'VALID' | 'EXPIRED' = 'VALID') {
   return page.route('**/api/activation/context', async (route) => {
     if (route.request().method() === 'GET') {
@@ -53,6 +72,7 @@ test.describe('SignMaster activation claim', () => {
   })
 
   test('confirmed sign-in with valid context claims successfully', async ({ page }) => {
+    await mockEntitlementNone(page)
     await mockActivationContextRoutes(page, 'VALID')
     await mockActivationClaimRoute(page, 'SUCCESS')
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
@@ -62,6 +82,7 @@ test.describe('SignMaster activation claim', () => {
     await page.locator('#sign-in-password').fill(AUTH_TEST_PASSWORD)
     await page.getByRole('button', { name: 'Sign in' }).click()
 
+    await expect(page).toHaveURL(/\/create-account$/)
     await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
     await expect(page.locator('[data-claim-outcome="success"]')).toBeVisible()
   })
@@ -69,6 +90,7 @@ test.describe('SignMaster activation claim', () => {
   test('same user repeat claim remains SUCCESS', async ({ page }) => {
     let claimAttempts = 0
 
+    await mockEntitlementNone(page)
     await mockActivationContextRoutes(page, 'VALID')
     await page.route('**/api/activation/claim', async (route) => {
       claimAttempts += 1
@@ -90,6 +112,7 @@ test.describe('SignMaster activation claim', () => {
   })
 
   test('other user conflict returns ALREADY_CLAIMED', async ({ page }) => {
+    await mockEntitlementNone(page)
     await mockActivationContextRoutes(page, 'VALID')
     await mockActivationClaimRoute(page, 'ALREADY_CLAIMED')
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
@@ -123,6 +146,7 @@ test.describe('SignMaster activation claim', () => {
   })
 
   test('eligibility change before claim returns NOT_ELIGIBLE', async ({ page }) => {
+    await mockEntitlementNone(page)
     await mockActivationContextRoutes(page, 'VALID')
     await mockActivationClaimRoute(page, 'NOT_ELIGIBLE')
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)

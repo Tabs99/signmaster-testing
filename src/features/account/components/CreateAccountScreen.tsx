@@ -36,7 +36,13 @@ import EyeToggle from './EyeToggle'
 import PasswordRequirement from './PasswordRequirement'
 import ValidTick from './ValidTick'
 
-function AccountSuccessCard({ claimOutcome }: { claimOutcome?: string }) {
+function AccountSuccessCard({
+  claimOutcome,
+  onEnterApp,
+}: {
+  claimOutcome?: string
+  onEnterApp?: () => void
+}) {
   return (
     <article
       className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl"
@@ -58,6 +64,13 @@ function AccountSuccessCard({ claimOutcome }: { claimOutcome?: string }) {
         You&apos;re signed in. Activation will continue in a later step — your companion app
         access is not unlocked yet.
       </p>
+      {onEnterApp ? (
+        <div className="mt-6">
+          <PrimaryButton type="button" enabled onClick={onEnterApp} className="w-full">
+            Continue
+          </PrimaryButton>
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -135,6 +148,7 @@ export default function CreateAccountScreen({
   buildConfirmationRedirect = buildConfirmationContinuationRedirect,
   onSignIn,
   onRestartActivation,
+  onEnterApp,
 }: CreateAccountScreenProps) {
   const {
     status: contextStatus,
@@ -355,6 +369,7 @@ export default function CreateAccountScreen({
             onRetryClaim={retryClaim}
             onSignIn={onSignIn}
             onRestartActivation={onRestartActivation}
+            onContinue={onEnterApp}
           />
         </div>
       </PageShell>
@@ -366,7 +381,7 @@ export default function CreateAccountScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          <AccountSuccessCard claimOutcome={claimOutcome} />
+          <AccountSuccessCard claimOutcome={claimOutcome} onEnterApp={onEnterApp} />
         </div>
       </PageShell>
     )

@@ -38,6 +38,20 @@ function mockClaim(page: Page, status: string) {
   })
 }
 
+function mockEntitlement(page: Page, status: 'ACTIVE' | 'NONE') {
+  return page.route('**/api/entitlement/me', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status }),
+    })
+  })
+}
+
 test.describe('SignMaster password reset', () => {
   test('Sign In → Forgot password → generic anti-enumeration confirmation', async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
@@ -60,9 +74,14 @@ test.describe('SignMaster password reset', () => {
     await expect(page.getByText(RESET_EMAIL)).toHaveCount(0)
   })
 
-  test('Genuine PASSWORD_RECOVERY session → reset password → success', async ({ page }) => {
+  test('Genuine PASSWORD_RECOVERY session → reset password → success routes through the resolver', async ({
+    page,
+  }) => {
     await mockContextResolve(page, 'NONE')
     await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL)
+    // Post-reset the user is authenticated but has no entitlement/context, so the
+    // shared post-auth resolver lands them on the activation-required (B10) state.
+    await mockEntitlement(page, 'NONE')
 
     await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
 
@@ -74,7 +93,10 @@ test.describe('SignMaster password reset', () => {
     await expect(page.getByText('Password updated')).toBeVisible()
 
     await page.getByRole('button', { name: 'Continue' }).click()
-    await expect(page).toHaveURL(/\/create-account$/)
+    await expect(page).toHaveURL(/\/app$/)
+    await expect(
+      page.getByRole('heading', { name: 'Finish activating SignMaster' }),
+    ).toBeVisible()
   })
 
   test('Normal authenticated session cannot use the reset form', async ({ page }) => {
@@ -144,6 +166,8 @@ test.describe('SignMaster password reset', () => {
     // via genuine recovery and, once authenticated, the resolver continues the claim.
     await mockContextResolve(page, 'VALID')
     await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL)
+    // No entitlement yet + valid context → the resolver resumes activation.
+    await mockEntitlement(page, 'NONE')
     await mockClaim(page, 'SUCCESS')
 
     await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
@@ -155,7 +179,8 @@ test.describe('SignMaster password reset', () => {
     await expect(page.getByText('Password updated')).toBeVisible()
     await page.getByRole('button', { name: 'Continue' }).click()
 
-    // The activation resolver resumes on /create-account and completes the claim.
+    // The post-auth resolver routes via /app, sees a valid context, and resumes
+    // activation on /create-account where the claim completes.
     await expect(page).toHaveURL(/\/create-account$/)
     await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
     await expect(page.locator('[data-claim-outcome="success"]')).toBeVisible()

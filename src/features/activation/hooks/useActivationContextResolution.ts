@@ -16,14 +16,22 @@ export interface UseActivationContextResolutionOptions {
   resolveContext?: (
     options?: Parameters<typeof resolveActivationContext>[0],
   ) => Promise<ActivationContextResolveResult>
+  /**
+   * When false, the hook does not resolve the activation context (no network
+   * call) and reports a non-loading, unresolved state. Used by protected
+   * routing to only resolve the context once it is actually needed (entitlement
+   * is NONE). Defaults to true so existing callers are unchanged.
+   */
+  enabled?: boolean
 }
 
 export function useActivationContextResolution(
   options: UseActivationContextResolutionOptions = {},
 ): UseActivationContextResolutionResult {
   const resolveContext = options.resolveContext ?? resolveActivationContext
+  const enabled = options.enabled ?? true
   const [status, setStatus] = useState<ActivationContextResolutionStatus | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(enabled)
   const [error, setError] = useState(false)
   const activeRef = useRef(true)
   const inFlightRef = useRef(false)
@@ -57,16 +65,25 @@ export function useActivationContextResolution(
 
   useEffect(() => {
     activeRef.current = true
-    void loadContext()
+
+    if (enabled) {
+      void loadContext()
+    } else {
+      setIsLoading(false)
+    }
 
     return () => {
       activeRef.current = false
     }
-  }, [loadContext])
+  }, [enabled, loadContext])
 
   const retry = useCallback(() => {
+    if (!enabled) {
+      return
+    }
+
     void loadContext()
-  }, [loadContext])
+  }, [enabled, loadContext])
 
   return { status, isLoading, error, retry }
 }

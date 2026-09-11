@@ -639,6 +639,95 @@ Recovery email link → Supabase establishes the recovery session (detectSession
 - After a same-browser reset the user is authenticated again, so the existing resolver continues the journey (`/create-account`).
 - Cross-device: the reset link carries no activation authority (no Order ID, no context token). A reset completed on another device simply follows the normal resolver/recovery rules there. Task 6 cross-device activation continuation is unchanged.
 
+## Protected routing (entitlement-aware access)
+
+Access to the protected area is authorised **server-side** by entitlement, not by
+the mere presence of a Supabase session. Authentication answers "who are you?";
+entitlement answers "are you allowed in?" (see *Authentication versus
+entitlement*). The `/app` route is the single guarded entry point and doubles as
+the shared **post-auth resolver** every sign-in / account-creation /
+activation-success / password-reset "Continue" funnels through.
+
+**Server authority**
+
+```
+GET /api/entitlement/me   (Bearer token ONLY)
+  → api/entitlement/me.ts (thin handler):
+      • derive user_id server-side from the verified Bearer token
+        (never from the request body/query)
+      • delegate to server/services/entitlementService.checkUserEntitlement
+  → entitlementService (service-role authority):
+      • query app_entitlements for the user filtered to status = 'active'
+      • re-check status = 'active' in code (defence in depth)
+  → returns a minimal enum ONLY: { status: 'ACTIVE' | 'NONE' }
+    (401 { status:'UNAUTHENTICATED' } with no session; 500 { status:'ERROR' } on failure)
+```
+
+- Only `status = 'active'` grants access. Missing/revoked → `NONE`.
+- **Fail closed:** any dependency error returns `ERROR` and the client treats it
+  as "no access yet" — a transient failure is never mistaken for a definitive
+  `NONE`, and access is never granted on error.
+- The response never contains an Amazon Order ID, entitlement id, user id,
+  timestamps, revocation reason, or database error text.
+- Client boundary `src/lib/api/entitlementApi.ts` maps the response to safe
+  categories `active | none | unauthenticated | service_unavailable |
+  connection_error` (unknown/malformed payloads collapse to
+  `service_unavailable`). It sends only the bearer token and no user id.
+
+**Resolver state machine** (`src/lib/routing/protectedRouteResolver.ts`, pure)
+
+Authority is evaluated in order — auth → entitlement → activation context — and
+`ProtectedRoute` renders exactly one outcome per pass, so there are never two
+competing redirects:
+
+| State | Trigger | Outcome |
+|-------|---------|---------|
+| `checking_auth` | Auth still initialising | Neutral loading (no protected content) |
+| `signed_out` | Not authenticated, or backend rejected the token | Redirect → `/sign-in` |
+| `checking_entitlement` | Entitlement lookup in flight | Neutral loading |
+| `active` | Entitlement `ACTIVE` | Render protected content |
+| `checking_activation_context` | Entitlement `NONE`, context in flight | Neutral loading |
+| `resume_activation` | Entitlement `NONE` + **valid** context | Redirect → resume (`/create-account`) |
+| `activation_required` | Entitlement `NONE` + no/expired context | Frozen state **B10** |
+| `retryable_error` | Entitlement or context lookup failed | Fail-closed retry screen |
+
+- **No protected-content flash:** while any authority is resolving, a neutral
+  "Checking your access…" screen renders — the protected content is never shown
+  before access is confirmed.
+- **Backend authority, no cache:** the entitlement is fetched fresh from the
+  backend on every mount. Nothing is read from or written to
+  `localStorage`/`sessionStorage`; a revoked entitlement therefore denies access
+  on the next navigation, and access does not "stick" across logout/login from a
+  browser cache.
+- **Revoked = no access:** a revoked row resolves to `NONE` (and then B10 or
+  resume, depending on context). The guard never claims or creates an
+  entitlement — resuming activation delegates to the existing Task 5 claim flow
+  so the claim is never duplicated.
+
+**Frozen state B10 (`ActivationRequiredScreen`)**
+
+| Element | Copy / target |
+|---------|---------------|
+| Heading | "Finish activating SignMaster" |
+| Body | "Your account is ready. Verify your Amazon order to activate access." |
+| Primary | "Verify my order" → `/activate` |
+| Secondary | "Use another account" → sign out, then `/sign-in` |
+| Support | "Get support" (mailto) |
+
+Usable from 375px upward with no horizontal overflow.
+
+**Post-auth resolver integration**
+
+Sign-in, account creation, activation-success "Continue", and password-reset
+"Continue" all route to `/app` rather than hardcoding a next screen; the guard
+then decides access vs. resume vs. B10. This preserves the Task 7 recovery
+authority (a recovery session grants no entitlement — the guard still asks the
+backend) and the Task 5/6 claim/completion rules (unchanged).
+
+**Explicitly not implemented here:** Dashboard, Quiz, Learn, Progress, and other
+product features. `/app` renders only a minimal "SignMaster access is active."
+placeholder proving the routing boundary.
+
 ### Current vs target gap
 
 | Aspect | Current (prototype) | Target |
@@ -1203,3 +1292,4 @@ sequenceDiagram
 | 2026-09-10 | Task 6 atomicity correction: cross-device continuation exchange (consume reference + create fresh context) is now a single transaction via the `service_role`-only `consume_activation_continuation` Postgres function — all-or-nothing with rollback-on-failure (retryable) and `SELECT ... FOR UPDATE` concurrency serialisation |
 | 2026-09-11 | Task 7: password recovery/reset flow — `/forgot-password` + `/reset-password` routes, `authService.requestPasswordReset`/`updatePassword` with safe error categories, Supabase recovery-session flow (`PASSWORD_RECOVERY` surfaced via `AuthProvider.isPasswordRecovery`), anti-enumeration request UX, sensitive-data-free recovery redirect URL, and activation-context continuity via the existing resolver (no Task 8 protected routing) |
 | 2026-09-11 | Task 7 recovery-authority correction: reset form is gated **only** on the `PASSWORD_RECOVERY` event — a normal authenticated session is no longer accepted as recovery authority, and a hard reload of `/reset-password` safely falls back to "request a new reset link" rather than treating any persisted session as recovery |
+| 2026-09-11 | Task 8: entitlement-aware protected routing — server-authoritative `GET /api/entitlement/me` (+ `server/services/entitlementService.ts`, active-only, fail closed, minimal `ACTIVE`/`NONE` enum, no data leakage), safe-category client `src/lib/api/entitlementApi.ts`, pure resolver state machine (`src/lib/routing/protectedRouteResolver.ts`) and `ProtectedRoute` guard behind the new `/app` route with a minimal access placeholder, frozen state B10 (`ActivationRequiredScreen`), no protected-content flash, backend-only entitlement authority (no browser cache), and a shared post-auth resolver that sign-in/create-account/activation-success/password-reset "Continue" all route through (Task 5 claim, Task 6 completion, and Task 7 recovery authority unchanged) |

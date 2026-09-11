@@ -95,7 +95,27 @@ function mockSupabaseSignUpConfirmationRequired(page: Page, email: string) {
   })
 }
 
+function mockEntitlementNone(page: Page) {
+  // Sign-in authenticates then hands off to the shared `/app` resolver, which
+  // reads entitlement first. A user still mid-activation resolves to NONE, so
+  // the resolver routes to the resume path (`/create-account`) where the claim
+  // and completion run — preserving the Task 6 completion semantics asserted
+  // here.
+  return page.route('**/api/entitlement/me', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'NONE' }),
+    })
+  })
+}
+
 async function signInConfirmed(page: Page) {
+  await mockEntitlementNone(page)
   await page.goto('/sign-in')
   await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)
   await page.locator('#sign-in-password').fill(AUTH_TEST_PASSWORD)

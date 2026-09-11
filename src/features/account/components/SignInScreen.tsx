@@ -1,19 +1,10 @@
-import { FormEvent, useCallback, useMemo, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import PageShell from '../../../components/layout/PageShell'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import BrandLockup from '../../activation/components/BrandLockup'
-import {
-  ActivationContextMissingNotice,
-  ActivationContextServiceErrorNotice,
-  ActivationExpiredNotice,
-} from '../../activation/components/ActivationContextNotice'
-import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
-import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
-import ActivationClaimResult from '../../activation/components/ActivationClaimResult'
 import FieldError from '../../activation/components/FieldError'
 import { authService } from '../../../lib/auth/authService'
-import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
 import { useAuthContext } from '../../auth/context/AuthProvider'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import {
@@ -26,19 +17,9 @@ import { accountInputClasses, accountLabelClassName } from '../utils/fieldStyles
 import { isValidEmail, isValidPassword } from '../utils/validation'
 import EyeToggle from './EyeToggle'
 
-function SignedInCard({
-  resumeState,
-  claimOutcome,
-}: {
-  resumeState: string | null
-  claimOutcome?: string
-}) {
+function SignedInCard({ onEnterApp }: { onEnterApp?: () => void }) {
   return (
-    <article
-      className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl"
-      data-resume-state={resumeState ?? undefined}
-      data-claim-outcome={claimOutcome}
-    >
+    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
       <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
         <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
           <path
@@ -52,25 +33,37 @@ function SignedInCard({
       </div>
       <p className="text-xl font-extrabold tracking-tight text-white">You&apos;re signed in</p>
       <p className="mt-2 text-sm leading-relaxed text-white/65">
-        Activation will continue in a later step. Your companion app access is not unlocked yet.
+        Taking you to SignMaster…
       </p>
+      {onEnterApp ? (
+        <div className="mt-6">
+          <PrimaryButton type="button" enabled onClick={onEnterApp} className="w-full">
+            Continue
+          </PrimaryButton>
+        </div>
+      ) : null}
     </article>
   )
 }
 
+/**
+ * Sign-in is authentication only. It authenticates the user and then hands off
+ * to the shared post-auth resolver (the `/app` guard) via `onEnterApp`; that
+ * resolver — not this screen — is the single authority that decides protected
+ * access vs. resuming activation vs. the activation-required state.
+ *
+ * Crucially, submission is never gated on activation-context availability: a
+ * returning, already-entitled user must be able to authenticate even when the
+ * activation-context API is slow or down. Any activation decision happens after
+ * authentication, inside the resolver, and only when entitlement is NONE.
+ */
 export default function SignInScreen({
   signIn = authService.signIn.bind(authService),
   onCreateAccount,
-  onRestartActivation,
   onForgotPassword,
+  onEnterApp,
 }: SignInScreenProps) {
-  const {
-    status: contextStatus,
-    isLoading: contextLoading,
-    error: contextError,
-    retry: retryContextResolution,
-  } = useActivationContextResolution()
-  const { isAuthenticated, user, isInitializing: authInitializing } = useAuthContext()
+  const { isAuthenticated } = useAuthContext()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const submitInFlightRef = useRef(false)
@@ -90,38 +83,17 @@ export default function SignInScreen({
   const showEmailErr = (emailTouched || submitAttempted) && !emailOk
   const showPwErr = (passwordTouched || submitAttempted) && !passwordOk
   const isLoading = formStatus === 'loading'
-  const contextResolutionBlocked = contextLoading || contextError
-  const canSubmit = emailOk && passwordOk && !isLoading && !contextResolutionBlocked
+  const canSubmit = emailOk && passwordOk && !isLoading
 
-  const resumeState = useMemo(() => {
-    if (contextLoading || authInitializing || contextError || !contextStatus) {
-      return null
+  // Hand off to the shared post-auth resolver once auth state reflects the
+  // signed-in session. Gating on `isAuthenticated` (rather than navigating
+  // straight after the sign-in call resolves) avoids racing the guard, which
+  // reads the same auth context and would otherwise bounce back to sign-in.
+  useEffect(() => {
+    if (formStatus === 'done' && isAuthenticated && onEnterApp) {
+      onEnterApp()
     }
-
-    return resolveActivationResumeState({
-      contextStatus,
-      auth: {
-        isAuthenticated,
-        isEmailConfirmed: Boolean(user?.emailConfirmed),
-      },
-      intent: 'sign_in',
-    })
-  }, [
-    authInitializing,
-    contextError,
-    contextLoading,
-    contextStatus,
-    isAuthenticated,
-    user?.emailConfirmed,
-  ])
-
-  const claimReady = resumeState === 'valid_context_confirmed_auth'
-  const { state: claimState, retry: retryClaim } = useActivationClaimWhenReady({
-    ready: claimReady,
-  })
-  const claimActive = claimState.kind !== 'idle'
-  const claimOutcome =
-    claimState.kind === 'outcome' ? claimState.outcome : undefined
+  }, [formStatus, isAuthenticated, onEnterApp])
 
   function fieldState(field: AccountFieldName): AccountFieldState {
     const isFocused = focusedField === field
@@ -142,10 +114,6 @@ export default function SignInScreen({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-
-      if (contextLoading || contextError) {
-        return
-      }
 
       setSubmitAttempted(true)
       setEmailTouched(true)
@@ -186,7 +154,7 @@ export default function SignInScreen({
         submitInFlightRef.current = false
       }
     },
-    [contextError, contextLoading, email, emailOk, passwordOk, signIn],
+    [email, emailOk, passwordOk, signIn],
   )
 
   if (formStatus === 'done') {
@@ -194,15 +162,7 @@ export default function SignInScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          {claimActive ? (
-            <ActivationClaimResult
-              claimState={claimState}
-              onRetryClaim={retryClaim}
-              onRestartActivation={onRestartActivation}
-            />
-          ) : (
-            <SignedInCard resumeState={resumeState} claimOutcome={claimOutcome} />
-          )}
+          <SignedInCard onEnterApp={onEnterApp} />
         </div>
       </PageShell>
     )
@@ -214,18 +174,6 @@ export default function SignInScreen({
         <BrandLockup variant="desktop" />
 
         <header className="mb-6 w-full max-w-[500px] px-1 text-center">
-          {contextError ? (
-            <ActivationContextServiceErrorNotice
-              onRetry={retryContextResolution}
-              isRetrying={contextLoading}
-            />
-          ) : null}
-          {!contextError && resumeState === 'expired_context' ? (
-            <ActivationExpiredNotice onRestartActivation={onRestartActivation} />
-          ) : null}
-          {!contextError && resumeState === 'confirmed_auth_no_context' ? (
-            <ActivationContextMissingNotice />
-          ) : null}
           <h1 className="text-[clamp(20px,4.5vw,28px)] font-extrabold leading-tight tracking-tight text-white">
             Sign in to SignMaster
           </h1>
@@ -234,10 +182,7 @@ export default function SignInScreen({
           </p>
         </header>
 
-        <article
-          className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl"
-          data-resume-state={resumeState ?? undefined}
-        >
+        <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-6 pb-7 backdrop-blur-xl">
           {authError ? (
             <div
               role="alert"
