@@ -65,4 +65,17 @@ describe('App', () => {
     // No recovery session in this test → safe recovery copy (no account leak).
     expect(await screen.findByText("This reset link can't be used")).toBeInTheDocument()
   })
+
+  it('guards /app: an unauthenticated visit redirects to sign-in without flashing protected content', async () => {
+    render(
+      <MemoryRouter initialEntries={['/app']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in to SignMaster' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('SignMaster access is active.')).not.toBeInTheDocument()
+  })
 })

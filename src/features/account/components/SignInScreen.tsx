@@ -29,9 +29,11 @@ import EyeToggle from './EyeToggle'
 function SignedInCard({
   resumeState,
   claimOutcome,
+  onEnterApp,
 }: {
   resumeState: string | null
   claimOutcome?: string
+  onEnterApp?: () => void
 }) {
   return (
     <article
@@ -54,6 +56,13 @@ function SignedInCard({
       <p className="mt-2 text-sm leading-relaxed text-white/65">
         Activation will continue in a later step. Your companion app access is not unlocked yet.
       </p>
+      {onEnterApp ? (
+        <div className="mt-6">
+          <PrimaryButton type="button" enabled onClick={onEnterApp} className="w-full">
+            Continue
+          </PrimaryButton>
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -63,6 +72,7 @@ export default function SignInScreen({
   onCreateAccount,
   onRestartActivation,
   onForgotPassword,
+  onEnterApp,
 }: SignInScreenProps) {
   const {
     status: contextStatus,
@@ -199,9 +209,14 @@ export default function SignInScreen({
               claimState={claimState}
               onRetryClaim={retryClaim}
               onRestartActivation={onRestartActivation}
+              onContinue={onEnterApp}
             />
           ) : (
-            <SignedInCard resumeState={resumeState} claimOutcome={claimOutcome} />
+            <SignedInCard
+              resumeState={resumeState}
+              claimOutcome={claimOutcome}
+              onEnterApp={onEnterApp}
+            />
           )}
         </div>
       </PageShell>

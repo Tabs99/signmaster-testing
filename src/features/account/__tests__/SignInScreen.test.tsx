@@ -209,6 +209,29 @@ describe('SignInScreen', () => {
     })
   })
 
+  it('routes onward through the resolver via a Continue action after sign in', async () => {
+    const user = userEvent.setup()
+    const onEnterApp = vi.fn()
+    const signIn = vi.fn().mockResolvedValue({
+      kind: 'success',
+      user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+      session: {
+        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+      },
+    })
+
+    render(<SignInScreen signIn={signIn} onEnterApp={onEnterApp} />)
+
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
+    await user.type(screen.getByLabelText('Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    const continueButton = await screen.findByRole('button', { name: 'Continue' })
+    await user.click(continueButton)
+
+    expect(onEnterApp).toHaveBeenCalledOnce()
+  })
+
   it('does not request claim for unconfirmed authenticated users', async () => {
     mockUseAuthContext.mockReturnValue({
       isInitializing: false,

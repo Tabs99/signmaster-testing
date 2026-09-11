@@ -10,6 +10,13 @@ export interface CreateAccountScreenProps {
   buildConfirmationRedirect?: (email: string) => Promise<string>
   onSignIn?: () => void
   onRestartActivation?: () => void
+  /**
+   * Routes onward through the entitlement-aware protected-route resolver (the
+   * `/app` guard) after account creation. The resolver — not this screen —
+   * decides between protected access, resuming activation, or the
+   * activation-required state.
+   */
+  onEnterApp?: () => void
 }
 
 export interface SignInScreenProps {
@@ -17,6 +24,12 @@ export interface SignInScreenProps {
   onCreateAccount?: () => void
   onRestartActivation?: () => void
   onForgotPassword?: () => void
+  /**
+   * Routes onward through the entitlement-aware protected-route resolver (the
+   * `/app` guard) after sign in. The resolver decides access vs. resume vs.
+   * activation-required.
+   */
+  onEnterApp?: () => void
 }
 
 export interface ForgotPasswordScreenProps {
