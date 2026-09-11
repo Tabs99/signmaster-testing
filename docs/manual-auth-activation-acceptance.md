@@ -45,7 +45,7 @@ P0 = must pass before freezing the auth boundary. P1 = important. P2 = good to v
 | PV-11 | P1 | Verification service failure → retry | Force 500 | "We can't check your order right now"; retry works | Screenshot | Automated (E2E, mocked) |
 | PV-12 | P1 | Connection failure → retry | Kill network mid-request | "We couldn't connect" | Screenshot | Automated (E2E, mocked) |
 | PV-13 | P0 | No sensitive Order ID in URL/storage after verify | Verify then inspect | URL + storage carry no Order ID/token | DevTools App tab | Automated (privacy spec) |
-| PV-14 | P0 | Rate limiting enforced server-side | Repeat verify rapidly (real backend) | `429` / rate-limited state; server caps attempts | Network 429; server logs | Manual only (real backend rate limiter) |
+| PV-14 | **DEFERRED — PRODUCTION HARDENING / TASK 10** | Server-side verify rate limiting / attempt caps. **Not implemented in Tasks 1–8 and not part of the Tasks 1–8 auth-boundary acceptance gate.** | When implemented: repeat verify rapidly → `429` / rate-limited state; server caps attempts per IP/order | Network 429; server logs | Not implemented (deferred to production hardening / Task 10) |
 | PV-15 | P1 | Mobile 375px no overflow | Verify flow at 375px | No horizontal scroll; controls usable | Screenshot | Automated (mobile project) |
 | PV-16 | P1 | Keyboard-only entry | Tab to field, type, Enter | Submits; verified | Screen recording | Automated (keyboard spec) |
 
@@ -288,14 +288,20 @@ Run each on a preview environment backed by a **non-production** Supabase projec
 | 18 | NAV-12 | Multi-tab race | Two tabs claiming same order → one entitlement | DB row count |
 | 19 | SEC-04 | Service-role secret not in bundle | `grep -R` built assets → no server secret | grep output |
 | 20 | CL-15/RT-15 | Browser cannot assert identity | Tampering `user_id` in requests has no effect | Network; server logs |
-| 21 | PV-14 | Verify rate limiting | Rapid repeats capped server-side | Network 429; logs |
+
+> **Note:** Server-side verify rate limiting (PV-14) is intentionally **deferred to production hardening / Task 10** and is **not** part of this Tasks 1–8 auth-boundary acceptance gate, so it is deliberately excluded from the P0 must-run shortlist above (20 scenarios).
 
 ---
 
 ## Real-Supabase / local-only gaps (mocks cannot prove)
 
 Mocked Cloud E2E stubs every `/api/*` and Supabase Auth endpoint, so the following are **not**
-proven by automation and MUST be covered manually on a non-production environment:
+proven by automation and MUST be covered manually on a non-production environment.
+
+> Note on rate limiting: this is a different category. It is **not** "implemented but unprovable by
+> mocks" — server-side verify rate limiting is **intentionally not implemented yet** (deferred to
+> production hardening / Task 10). It is a **pre-production hardening requirement**, not a Tasks 1–8
+> auth-boundary acceptance item, and therefore is excluded from the P0 gate above. See item 10 below.
 
 1. **Real Supabase email-confirmation callback** (SDC-03) — actual `detectSessionInUrl` handling and session establishment.
 2. **Real Supabase `PASSWORD_RECOVERY` callback** (PR-04/PR-09) — genuine recovery event + `updateUser`.
@@ -306,5 +312,5 @@ proven by automation and MUST be covered manually on a non-production environmen
 7. **Real entitlement query** (RT-16, SEC-05) — service-role query + response minimality end-to-end.
 8. **Service-role / RLS interaction** — RLS on `app_entitlements`, service-role boundaries.
 9. **Actual logout/login session persistence** (RT-13) — real Supabase session lifecycle.
-10. **Server-side rate limiting / attempt caps** (PV-14) — real limiter behaviour.
+10. **Server-side rate limiting / attempt caps** (PV-14) — **intentionally not implemented yet**; deferred to production hardening / Task 10. This is a pre-production hardening requirement, **not** a Tasks 1–8 auth-boundary acceptance gate item (and not merely "unprovable by mocks").
 11. **Verify against real order fixtures** (PV-03→PV-09) — eligibility/retained-quantity math against real DB rows.
