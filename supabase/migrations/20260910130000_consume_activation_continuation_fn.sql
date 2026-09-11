@@ -69,9 +69,9 @@ $$;
 -- never execute this, so it cannot bypass the authenticated-session authority
 -- enforced by the API route.
 revoke all on function public.consume_activation_continuation(
-  text, text, timestamptz, timestamptz, timestamptz
+  text, text, timestamptz, text, timestamptz
 ) from public, anon, authenticated;
 
 grant execute on function public.consume_activation_continuation(
-  text, text, timestamptz, timestamptz, timestamptz
+  text, text, timestamptz, text, timestamptz
 ) to service_role;
