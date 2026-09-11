@@ -610,8 +610,9 @@ Sign In → "Forgot password?" → /forgot-password
 Recovery email link → Supabase establishes the recovery session (detectSessionInUrl)
   → AuthProvider observes the `PASSWORD_RECOVERY` auth event (isPasswordRecovery = true)
   → lands on /reset-password (ResetPasswordScreen)
-  → recovery gate: form shows only when a recovery event OR an active session exists;
-      otherwise → safe "This reset link can't be used" recovery state
+  → recovery gate: form shows ONLY when the PASSWORD_RECOVERY event has fired
+      (isPasswordRecovery) in this page load; otherwise → safe
+      "This reset link can't be used" recovery state
   → user enters New password + Confirm password (existing password rules + match)
   → authService.updatePassword(newPassword) → supabase.auth.updateUser({ password })
   → on success: session remains valid/authenticated → success state → Continue
@@ -622,7 +623,9 @@ Recovery email link → Supabase establishes the recovery session (detectSession
 **Recovery-session authority & AuthProvider**
 
 - The single `AuthProvider` `onAuthStateChange` subscription (one source of truth) records the `PASSWORD_RECOVERY` event as `isPasswordRecovery`. This is the only AuthProvider change; it introduces no second competing auth-state resolver.
-- A recovery entry is proven by the `PASSWORD_RECOVERY` event or by an active session Supabase established from the link (which persists across a reload of the route). No session and no recovery event → the route shows safe recovery copy, never a password form.
+- Recovery authority originates **only** from Supabase's `PASSWORD_RECOVERY` event. A normal authenticated session is **not** recovery authority: a signed-in user who manually visits `/reset-password` gets the safe recovery state, never the password form (that would be account-settings / change-password, which Task 7 does not implement). User id, email, and activation context are never used as recovery authority.
+- A late-arriving `PASSWORD_RECOVERY` event (still within the same page load) flips `checking → ready`, so a genuine recovery entry is never mislabelled invalid due to event/`getSession` ordering.
+- **Reload semantics:** the `PASSWORD_RECOVERY` event does not re-fire on reload and cannot be re-derived without unsafe client authority. Rather than weaken the boundary (e.g. treating the persisted session as recovery, or reading tokens from storage), a hard reload of `/reset-password` deliberately falls back to the safe "request a new reset link" state.
 - `isPasswordRecovery` grants no entitlement and unlocks no protected content (there is no protected routing yet — Task 8).
 
 **Invalid / expired / used / malformed recovery**
@@ -1199,3 +1202,4 @@ sequenceDiagram
 | 2026-09-07 | Task 6 corrections: completion outcome authority (a claim SUCCESS no longer overrides `NOT_ELIGIBLE` / `EMAIL_NOT_CONFIRMED` / `UNAUTHENTICATED` at finalisation; terminal-only completion lock) and implemented true cross-device confirmation via a short-lived, opaque, single-use, server-side continuation reference (`POST /api/activation/continuation` + `POST /api/activation/continue`, `activation_continuations` table) |
 | 2026-09-10 | Task 6 atomicity correction: cross-device continuation exchange (consume reference + create fresh context) is now a single transaction via the `service_role`-only `consume_activation_continuation` Postgres function — all-or-nothing with rollback-on-failure (retryable) and `SELECT ... FOR UPDATE` concurrency serialisation |
 | 2026-09-11 | Task 7: password recovery/reset flow — `/forgot-password` + `/reset-password` routes, `authService.requestPasswordReset`/`updatePassword` with safe error categories, Supabase recovery-session flow (`PASSWORD_RECOVERY` surfaced via `AuthProvider.isPasswordRecovery`), anti-enumeration request UX, sensitive-data-free recovery redirect URL, and activation-context continuity via the existing resolver (no Task 8 protected routing) |
+| 2026-09-11 | Task 7 recovery-authority correction: reset form is gated **only** on the `PASSWORD_RECOVERY` event — a normal authenticated session is no longer accepted as recovery authority, and a hard reload of `/reset-password` safely falls back to "request a new reset link" rather than treating any persisted session as recovery |
