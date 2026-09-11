@@ -1,9 +1,49 @@
 import { expect, test, type Page } from '@playwright/test'
-import { mockSupabaseAuthBootstrap, seedConfirmedSession } from './helpers/supabaseMock'
+import {
+  mockSupabaseAuthBootstrap,
+  mockSupabaseSignInSuccess,
+  seedConfirmedSession,
+} from './helpers/supabaseMock'
 
 const APP_EMAIL = 'protected-e2e-fixture@example.invalid'
+const APP_PASSWORD = 'Secure123!'
 const ACCESS_TEXT = 'SignMaster access is active.'
 const B10_HEADING = 'Finish activating SignMaster'
+
+/**
+ * Persists a confirmed Supabase session via a one-shot `evaluate` (not an init
+ * script) so it can later be cleared to model a genuine sign-out. localStorage
+ * survives same-origin navigations, so the session stays put across `goto`
+ * until it is explicitly removed.
+ */
+async function persistConfirmedSession(page: Page, email: string) {
+  await page.evaluate((sessionEmail) => {
+    const session = {
+      access_token: 'test-access-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: 9999999999,
+      refresh_token: 'test-refresh-token',
+      user: {
+        id: '00000000-0000-4000-8000-000000000010',
+        aud: 'authenticated',
+        role: 'authenticated',
+        email: sessionEmail,
+        email_confirmed_at: '2026-01-01T00:00:00.000Z',
+        app_metadata: {},
+        user_metadata: {},
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    }
+    window.localStorage.setItem('sb-127-auth-token', JSON.stringify(session))
+  }, email)
+}
+
+async function clearPersistedSession(page: Page) {
+  await page.evaluate(() => {
+    window.localStorage.removeItem('sb-127-auth-token')
+  })
+}
 
 function mockEntitlement(
   page: Page,
@@ -186,5 +226,72 @@ test.describe('SignMaster entitlement-aware protected routing', () => {
 
     await expect(page.getByRole('heading', { name: B10_HEADING })).toBeVisible()
     await expect(page.getByText(ACCESS_TEXT)).toHaveCount(0)
+  })
+
+  test('active entitlement survives a true logout / login cycle without a browser cache', async ({
+    page,
+  }) => {
+    let entitlementCalls = 0
+    await mockSupabaseAuthBootstrap(page)
+    await mockEntitlement(page, () => {
+      entitlementCalls += 1
+      return 'ACTIVE'
+    })
+    await mockSupabaseSignInSuccess(page, APP_EMAIL)
+
+    // 1. Authenticated user with ACTIVE entitlement reaches /app.
+    await page.goto('/sign-in')
+    await persistConfirmedSession(page, APP_EMAIL)
+    await page.goto('/app')
+    await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
+    const callsAfterInitialGrant = entitlementCalls
+    expect(callsAfterInitialGrant).toBeGreaterThanOrEqual(1)
+
+    // 2 + 3. Sign out (clear the persisted session) — a direct /app visit no
+    // longer grants access and never flashes protected content.
+    await clearPersistedSession(page)
+    await page.goto('/app')
+    await expect(page).toHaveURL(/\/sign-in$/)
+    await expect(page.getByText(ACCESS_TEXT)).toHaveCount(0)
+
+    // 4 + 5 + 6. Sign in again → the resolver re-checks entitlement (ACTIVE)
+    // from the backend and access is restored.
+    await page.getByLabel('Email Address').fill(APP_EMAIL)
+    await page.locator('#sign-in-password').fill(APP_PASSWORD)
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
+
+    // 7. Entitlement was re-queried on the second grant — nothing was served
+    // from a browser-side entitlement cache.
+    expect(entitlementCalls).toBeGreaterThan(callsAfterInitialGrant)
+  })
+
+  test('returning active user signs in and reaches /app even when the activation-context API is down', async ({
+    page,
+  }) => {
+    await mockSupabaseAuthBootstrap(page)
+    await mockEntitlement(page, () => 'ACTIVE')
+    await mockSupabaseSignInSuccess(page, APP_EMAIL)
+
+    // Activation-context API is unavailable. For an ACTIVE user it must never
+    // be consulted, and it must never block authentication or access.
+    let contextCalls = 0
+    await page.route('**/api/activation/context', async (route) => {
+      contextCalls += 1
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ERROR' }),
+      })
+    })
+
+    await page.goto('/sign-in')
+    await page.getByLabel('Email Address').fill(APP_EMAIL)
+    await page.locator('#sign-in-password').fill(APP_PASSWORD)
+    await page.getByRole('button', { name: 'Sign in' }).click()
+
+    await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
+    await expect(page.getByRole('heading', { name: B10_HEADING })).toHaveCount(0)
+    expect(contextCalls).toBe(0)
   })
 })

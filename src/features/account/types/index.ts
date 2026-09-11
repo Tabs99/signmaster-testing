@@ -22,7 +22,6 @@ export interface CreateAccountScreenProps {
 export interface SignInScreenProps {
   signIn?: AuthService['signIn']
   onCreateAccount?: () => void
-  onRestartActivation?: () => void
   onForgotPassword?: () => void
   /**
    * Routes onward through the entitlement-aware protected-route resolver (the

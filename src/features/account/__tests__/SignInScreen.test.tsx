@@ -5,33 +5,25 @@ import SignInScreen from '../components/SignInScreen'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import type { SignInResult } from '../../../lib/auth/types'
 
-vi.mock('../../../lib/api/activationContextApi', () => ({
-  resolveActivationContext: vi.fn(),
-}))
-
 vi.mock('../../auth/context/AuthProvider', () => ({
   useAuthContext: vi.fn(),
 }))
 
-vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
-  useActivationClaimWhenReady: vi.fn(() => ({ state: { kind: 'idle' }, retry: vi.fn() })),
-}))
-
-import { resolveActivationContext } from '../../../lib/api/activationContextApi'
 import { useAuthContext } from '../../auth/context/AuthProvider'
-import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
 
-const mockResolveActivationContext = vi.mocked(resolveActivationContext)
 const mockUseAuthContext = vi.mocked(useAuthContext)
-const mockUseActivationClaimWhenReady = vi.mocked(useActivationClaimWhenReady)
+
+const successResult: SignInResult = {
+  kind: 'success',
+  user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+  session: {
+    user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+  },
+}
 
 describe('SignInScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockResolveActivationContext.mockResolvedValue({
-      kind: 'status',
-      status: 'VALID',
-    })
     mockUseAuthContext.mockReturnValue({
       isInitializing: false,
       isAuthenticated: false,
@@ -54,45 +46,28 @@ describe('SignInScreen', () => {
     expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument()
   })
 
-  it('shows service error notice and blocks submit when context resolution fails', async () => {
+  it('authenticates without depending on activation context availability', async () => {
     const user = userEvent.setup()
-    const signIn = vi.fn()
-    mockResolveActivationContext.mockResolvedValue({ kind: 'service_unavailable' })
+    const signIn = vi.fn().mockResolvedValue(successResult)
 
     render(<SignInScreen signIn={signIn} />)
 
-    await waitFor(() => {
-      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
-    })
-
-    expect(screen.queryByTestId('activation-expired-notice')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('activation-context-missing-notice')).not.toBeInTheDocument()
+    // No activation-context notice is ever rendered on sign-in: authentication
+    // is independent of the activation-context API.
+    expect(
+      screen.queryByTestId('activation-context-service-error-notice'),
+    ).not.toBeInTheDocument()
 
     await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
     await user.type(screen.getByLabelText('Password'), 'Secure123!')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(signIn).not.toHaveBeenCalled()
-  })
-
-  it('retries context resolution after failure', async () => {
-    const user = userEvent.setup()
-    mockResolveActivationContext
-      .mockResolvedValueOnce({ kind: 'connection_error' })
-      .mockResolvedValueOnce({ kind: 'status', status: 'VALID' })
-
-    render(<SignInScreen />)
-
     await waitFor(() => {
-      expect(screen.getByTestId('activation-context-service-error-notice')).toBeInTheDocument()
+      expect(signIn).toHaveBeenCalledOnce()
     })
-
-    await user.click(screen.getByRole('button', { name: 'Retry' }))
-
     await waitFor(() => {
-      expect(screen.queryByTestId('activation-context-service-error-notice')).not.toBeInTheDocument()
+      expect(screen.getByText("You're signed in")).toBeInTheDocument()
     })
-    expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
   })
 
   it('shows validation errors for invalid input', async () => {
@@ -132,13 +107,7 @@ describe('SignInScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Signing in…' }))
     expect(signIn).toHaveBeenCalledOnce()
 
-    resolveSignIn({
-      kind: 'success',
-      user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
-      session: {
-        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
-      },
-    })
+    resolveSignIn(successResult)
 
     await waitFor(() => {
       expect(screen.getByText("You're signed in")).toBeInTheDocument()
@@ -188,36 +157,18 @@ describe('SignInScreen', () => {
     expect(onForgotPassword).toHaveBeenCalledOnce()
   })
 
-  it('requests claim when context and confirmed auth are ready', async () => {
+  it('auto-routes through the resolver once auth reflects the signed-in session', async () => {
+    const user = userEvent.setup()
+    const onEnterApp = vi.fn()
+    const signIn = vi.fn().mockResolvedValue(successResult)
+
+    // Auth context already reflects an authenticated session, so the hand-off
+    // to the shared post-auth resolver fires without a manual Continue click.
     mockUseAuthContext.mockReturnValue({
       isInitializing: false,
       isAuthenticated: true,
-      user: {
-        id: '11111111-1111-4111-8111-111111111111',
-        email: 'alex@example.invalid',
-        emailConfirmed: true,
-      },
-      signOut: vi.fn(),
-    })
-
-    render(<SignInScreen />)
-
-    await waitFor(() => {
-      expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
-        expect.objectContaining({ ready: true }),
-      )
-    })
-  })
-
-  it('routes onward through the resolver via a Continue action after sign in', async () => {
-    const user = userEvent.setup()
-    const onEnterApp = vi.fn()
-    const signIn = vi.fn().mockResolvedValue({
-      kind: 'success',
       user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
-      session: {
-        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
-      },
+      signOut: vi.fn(),
     })
 
     render(<SignInScreen signIn={signIn} onEnterApp={onEnterApp} />)
@@ -226,30 +177,29 @@ describe('SignInScreen', () => {
     await user.type(screen.getByLabelText('Password'), 'Secure123!')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
+    await waitFor(() => {
+      expect(onEnterApp).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('offers a manual Continue hand-off to the resolver when auth has not yet settled', async () => {
+    const user = userEvent.setup()
+    const onEnterApp = vi.fn()
+    const signIn = vi.fn().mockResolvedValue(successResult)
+
+    // isAuthenticated stays false (auth event not yet observed), so the auto
+    // hand-off is intentionally suppressed and the user gets a Continue button.
+    render(<SignInScreen signIn={signIn} onEnterApp={onEnterApp} />)
+
+    await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
+    await user.type(screen.getByLabelText('Password'), 'Secure123!')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
     const continueButton = await screen.findByRole('button', { name: 'Continue' })
+    expect(onEnterApp).not.toHaveBeenCalled()
+
     await user.click(continueButton)
 
     expect(onEnterApp).toHaveBeenCalledOnce()
-  })
-
-  it('does not request claim for unconfirmed authenticated users', async () => {
-    mockUseAuthContext.mockReturnValue({
-      isInitializing: false,
-      isAuthenticated: false,
-      user: {
-        id: '11111111-1111-4111-8111-111111111111',
-        email: 'alex@example.invalid',
-        emailConfirmed: false,
-      },
-      signOut: vi.fn(),
-    })
-
-    render(<SignInScreen />)
-
-    await waitFor(() => {
-      expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
-        expect.objectContaining({ ready: false }),
-      )
-    })
   })
 })

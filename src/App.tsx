@@ -39,7 +39,6 @@ function AppRoutes() {
         element={
           <SignInScreen
             onCreateAccount={() => navigate('/create-account')}
-            onRestartActivation={() => navigate('/activate')}
             onForgotPassword={() => navigate('/forgot-password')}
             onEnterApp={() => navigate('/app')}
           />
