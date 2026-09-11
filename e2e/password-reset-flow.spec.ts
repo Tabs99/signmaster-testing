@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
+  buildRecoveryHash,
   mockSupabaseAuthBootstrap,
   mockSupabasePasswordRecover,
-  mockSupabaseUpdateUserSuccess,
+  mockSupabaseRecoveryUserEndpoint,
   seedConfirmedSession,
 } from './helpers/supabaseMock'
 
@@ -59,12 +60,11 @@ test.describe('SignMaster password reset', () => {
     await expect(page.getByText(RESET_EMAIL)).toHaveCount(0)
   })
 
-  test('Valid recovery session → reset password → success', async ({ page }) => {
-    await seedConfirmedSession(page, RESET_EMAIL)
+  test('Genuine PASSWORD_RECOVERY session → reset password → success', async ({ page }) => {
     await mockContextResolve(page, 'NONE')
-    await mockSupabaseUpdateUserSuccess(page, RESET_EMAIL)
+    await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL)
 
-    await page.goto('/reset-password')
+    await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
 
     await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible()
     await page.getByLabel('New Password', { exact: true }).fill(NEW_PASSWORD)
@@ -75,6 +75,18 @@ test.describe('SignMaster password reset', () => {
 
     await page.getByRole('button', { name: 'Continue' }).click()
     await expect(page).toHaveURL(/\/create-account$/)
+  })
+
+  test('Normal authenticated session cannot use the reset form', async ({ page }) => {
+    // Signed in normally (persisted session), no recovery entry: the reset form
+    // must not appear — this is not the recovery route for a normal session.
+    await seedConfirmedSession(page, RESET_EMAIL)
+    await mockContextResolve(page, 'NONE')
+
+    await page.goto('/reset-password')
+
+    await expect(page.getByText("This reset link can't be used")).toBeVisible()
+    await expect(page.getByLabel('New Password', { exact: true })).toHaveCount(0)
   })
 
   test('Invalid/expired recovery link → safe recovery', async ({ page }) => {
@@ -88,13 +100,31 @@ test.describe('SignMaster password reset', () => {
     await expect(page).toHaveURL(/\/forgot-password$/)
   })
 
+  test('Recovery does not persist across a hard reload (falls back to safe state)', async ({
+    page,
+  }) => {
+    await mockContextResolve(page, 'NONE')
+    await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL)
+
+    await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
+    await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible()
+
+    // The recovery event does not re-fire on reload; the persisted session must
+    // NOT be treated as recovery authority.
+    await page.reload()
+    await expect(page.getByText("This reset link can't be used")).toBeVisible()
+    await expect(page.getByLabel('New Password', { exact: true })).toHaveCount(0)
+  })
+
   test('Duplicate reset submit is blocked', async ({ page }) => {
     const updateCounter = { count: 0 }
-    await seedConfirmedSession(page, RESET_EMAIL)
     await mockContextResolve(page, 'NONE')
-    await mockSupabaseUpdateUserSuccess(page, RESET_EMAIL, updateCounter, 400)
+    await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL, {
+      updateCounter,
+      updateDelayMs: 400,
+    })
 
-    await page.goto('/reset-password')
+    await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
 
     await page.getByLabel('New Password', { exact: true }).fill(NEW_PASSWORD)
     await page.getByLabel('Confirm New Password').fill(NEW_PASSWORD)
@@ -111,13 +141,12 @@ test.describe('SignMaster password reset', () => {
 
   test('Activation context continuity is preserved through reset', async ({ page }) => {
     // A verified purchaser with a valid activation context resets their password
-    // and, once authenticated again, the existing resolver continues the claim.
-    await seedConfirmedSession(page, RESET_EMAIL)
+    // via genuine recovery and, once authenticated, the resolver continues the claim.
     await mockContextResolve(page, 'VALID')
-    await mockSupabaseUpdateUserSuccess(page, RESET_EMAIL)
+    await mockSupabaseRecoveryUserEndpoint(page, RESET_EMAIL)
     await mockClaim(page, 'SUCCESS')
 
-    await page.goto('/reset-password')
+    await page.goto(`/reset-password${buildRecoveryHash(RESET_EMAIL)}`)
 
     await page.getByLabel('New Password', { exact: true }).fill(NEW_PASSWORD)
     await page.getByLabel('Confirm New Password').fill(NEW_PASSWORD)
