@@ -15,6 +15,7 @@ export const ACTIVATION_TEST_RESET_ORDER_IDS = [
   '555-5555555-5555555',
   '666-6666666-6666666',
   '777-7777777-7777777',
+  '888-8888888-8888888',
 ] as const
 
 export type ActivationTestResetOrderId =
@@ -95,6 +96,11 @@ export function getActivationTestFixtureExpectations(): ActivationTestFixtureExp
       seedable: true,
     },
     {
+      orderId: '888-8888888-8888888',
+      expectedStatus: 'ELIGIBLE',
+      seedable: true,
+    },
+    {
       orderId: ACTIVATION_TEST_NOT_FOUND_ABSENT_ORDER_ID,
       expectedStatus: 'NOT_FOUND',
       seedable: false,
@@ -152,6 +158,21 @@ export function buildActivationTestOrderSeeds(
           quantityFulfilled: 1,
           quantityReturned: 0,
           sku: 'FIXTURE-000-ELIGIBLE',
+        },
+      ],
+    },
+    {
+      orderId: '888-8888888-8888888',
+      fulfillmentStatus: 'SHIPPED',
+      createEntitlement: false,
+      items: [
+        {
+          orderItemId: 'fixture-item-888',
+          asin: targetAsin,
+          quantityOrdered: 1,
+          quantityFulfilled: 1,
+          quantityReturned: 0,
+          sku: 'FIXTURE-888-ELIGIBLE',
         },
       ],
     },
