@@ -578,6 +578,64 @@ Confirming device (any browser; NO original cookie):
 - Unknown, malformed, expired, already-consumed, or mismatched-email references all resolve to a safe recovery state on `/activation/continue` ("This activation link can't be used" → Sign in / Verify my order). No enumeration.
 - No `ref` present, or an unauthenticated confirming device: the screen routes onward (resume when already authenticated, otherwise prompt sign-in), so the **same-browser** path — return to the original tab, click "I've confirmed my email", refresh session, claim — is unaffected. Both paths coexist.
 
+## Password recovery / reset flow
+
+SignMaster uses Supabase Auth's supported recovery-session flow for password reset. Authentication and entitlement stay separate (see *Authentication versus entitlement*): resetting a password never grants, transfers, or recreates an entitlement, and a recovery session is never treated as activation authority.
+
+**Routes**
+
+| Route | Screen | Purpose |
+|-------|--------|---------|
+| `/forgot-password` | `ForgotPasswordScreen` | Request a reset email (reached via the "Forgot password?" action on `/sign-in`) |
+| `/reset-password` | `ResetPasswordScreen` | Dedicated recovery landing route; choose a new password when a recovery session exists |
+
+**Request flow (anti-enumeration)**
+
+```
+Sign In → "Forgot password?" → /forgot-password
+  → user enters email
+  → authService.requestPasswordReset(email, { redirectTo: `${origin}/reset-password` })
+      → supabase.auth.resetPasswordForEmail(email, { redirectTo })
+  → UI always shows the same generic confirmation:
+      "If an account exists for this email, we've sent a password reset link."
+```
+
+- Account existence is never revealed. Account-not-found does not error in Supabase, so it collapses to the same `sent` outcome; any unexpected/unclassified error also collapses to `sent`. Only genuine transient failures (rate-limited / service / connection) surface a neutral "try again" state — never an account signal.
+- Raw Supabase errors never reach the UI. `authService` maps outcomes to safe categories (`categorisePasswordResetRequestError`).
+- The `redirectTo` URL points only at `${origin}/reset-password` with **no** query params — it carries no user id, Amazon Order ID, activation-context token, `token_hash`, or entitlement id. Supabase appends the recovery session itself (`buildPasswordResetRedirect`).
+
+**Reset flow (recovery session)**
+
+```
+Recovery email link → Supabase establishes the recovery session (detectSessionInUrl)
+  → AuthProvider observes the `PASSWORD_RECOVERY` auth event (isPasswordRecovery = true)
+  → lands on /reset-password (ResetPasswordScreen)
+  → recovery gate: form shows only when a recovery event OR an active session exists;
+      otherwise → safe "This reset link can't be used" recovery state
+  → user enters New password + Confirm password (existing password rules + match)
+  → authService.updatePassword(newPassword) → supabase.auth.updateUser({ password })
+  → on success: session remains valid/authenticated → success state → Continue
+      → routes to /create-account where the existing activation resolver resumes
+        (valid context + confirmed auth → normal Task 5 claim; unchanged)
+```
+
+**Recovery-session authority & AuthProvider**
+
+- The single `AuthProvider` `onAuthStateChange` subscription (one source of truth) records the `PASSWORD_RECOVERY` event as `isPasswordRecovery`. This is the only AuthProvider change; it introduces no second competing auth-state resolver.
+- A recovery entry is proven by the `PASSWORD_RECOVERY` event or by an active session Supabase established from the link (which persists across a reload of the route). No session and no recovery event → the route shows safe recovery copy, never a password form.
+- `isPasswordRecovery` grants no entitlement and unlocks no protected content (there is no protected routing yet — Task 8).
+
+**Invalid / expired / used / malformed recovery**
+
+- Missing recovery session, expired/used link, malformed callback, or a signed-out visit to `/reset-password` all resolve to the same safe recovery state: *request a new reset email* or *return to sign in*. No account/email existence is leaked.
+- If the recovery session dies mid-submit, `updatePassword` returns `invalid_recovery_session` and the screen falls back to the same safe recovery state.
+
+**Activation continuity**
+
+- Requesting a reset does not touch or invalidate an in-progress activation context, and creates/modifies no entitlement rows.
+- After a same-browser reset the user is authenticated again, so the existing resolver continues the journey (`/create-account`).
+- Cross-device: the reset link carries no activation authority (no Order ID, no context token). A reset completed on another device simply follows the normal resolver/recovery rules there. Task 6 cross-device activation continuation is unchanged.
+
 ### Current vs target gap
 
 | Aspect | Current (prototype) | Target |
@@ -1140,3 +1198,4 @@ sequenceDiagram
 | 2026-09-06 | Task 6: documented activation completion/finalisation flow (`POST /api/activation/complete`), completion endpoint security & repeat-completion idempotency rules, and the cross-device confirmation note (deferred continuation reference) |
 | 2026-09-07 | Task 6 corrections: completion outcome authority (a claim SUCCESS no longer overrides `NOT_ELIGIBLE` / `EMAIL_NOT_CONFIRMED` / `UNAUTHENTICATED` at finalisation; terminal-only completion lock) and implemented true cross-device confirmation via a short-lived, opaque, single-use, server-side continuation reference (`POST /api/activation/continuation` + `POST /api/activation/continue`, `activation_continuations` table) |
 | 2026-09-10 | Task 6 atomicity correction: cross-device continuation exchange (consume reference + create fresh context) is now a single transaction via the `service_role`-only `consume_activation_continuation` Postgres function — all-or-nothing with rollback-on-failure (retryable) and `SELECT ... FOR UPDATE` concurrency serialisation |
+| 2026-09-11 | Task 7: password recovery/reset flow — `/forgot-password` + `/reset-password` routes, `authService.requestPasswordReset`/`updatePassword` with safe error categories, Supabase recovery-session flow (`PASSWORD_RECOVERY` surfaced via `AuthProvider.isPasswordRecovery`), anti-enumeration request UX, sensitive-data-free recovery redirect URL, and activation-context continuity via the existing resolver (no Task 8 protected routing) |
