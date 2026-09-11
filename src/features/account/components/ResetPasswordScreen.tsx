@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { FormEvent, useCallback, useRef, useState } from 'react'
 import PageShell from '../../../components/layout/PageShell'
 import BrandLockup from '../../activation/components/BrandLockup'
 import ActivationStatusPlate from '../../activation/components/ActivationStatusPlate'
@@ -81,12 +81,12 @@ export default function ResetPasswordScreen({
   onSignIn,
   onRequestNewLink,
 }: ResetPasswordScreenProps) {
-  const { isInitializing, user, isPasswordRecovery } = useAuthContext()
+  const { isInitializing, isPasswordRecovery } = useAuthContext()
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
   const submitInFlightRef = useRef(false)
 
-  const [recoveryView, setRecoveryView] = useState<RecoveryView>('checking')
+  const [recoveryLost, setRecoveryLost] = useState(false)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [passwordTouched, setPasswordTouched] = useState(false)
@@ -98,22 +98,24 @@ export default function ResetPasswordScreen({
   const [status, setStatus] = useState<ResetPasswordSubmitStatus>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // A genuine recovery entry is proven either by the Supabase PASSWORD_RECOVERY
-  // event or by an active session that Supabase established from the recovery
-  // link (which persists across a reload of this route). No session and no
-  // recovery event means there is nothing to reset here.
-  useEffect(() => {
-    if (isInitializing) {
-      return
-    }
-
-    setRecoveryView((current) => {
-      if (current === 'invalid') {
-        return current
-      }
-      return isPasswordRecovery || user ? 'ready' : 'invalid'
-    })
-  }, [isInitializing, isPasswordRecovery, user])
+  // Recovery authority comes ONLY from Supabase's `PASSWORD_RECOVERY` event
+  // (surfaced by AuthProvider as `isPasswordRecovery`). A normal authenticated
+  // session is deliberately NOT accepted here — that would be account settings
+  // / change-password, which Task 7 does not implement. `recoveryLost` is a
+  // sticky flag set when the recovery session dies mid-flow.
+  //
+  // Reload semantics: the recovery event does not re-fire on reload and cannot
+  // be safely re-derived without unsafe client authority, so a hard reload of
+  // /reset-password falls back to the safe "request a new reset link" state.
+  // A late-arriving event (while still on the same page load) flips checking →
+  // ready, so a genuine recovery entry is never mislabelled invalid.
+  const recoveryView: RecoveryView = recoveryLost
+    ? 'invalid'
+    : isPasswordRecovery
+      ? 'ready'
+      : isInitializing
+        ? 'checking'
+        : 'invalid'
 
   const pwLengthOk = hasMinPasswordLength(password)
   const pwSymbolOk = hasNumberOrSymbol(password)
@@ -180,7 +182,7 @@ export default function ResetPasswordScreen({
         if (result.kind === 'invalid_recovery_session') {
           // The recovery session died mid-flow — send the user to safe recovery.
           setStatus('idle')
-          setRecoveryView('invalid')
+          setRecoveryLost(true)
           return
         }
 

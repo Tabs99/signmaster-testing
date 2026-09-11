@@ -81,20 +81,27 @@ describe('ResetPasswordScreen', () => {
     expect(updatePassword).not.toHaveBeenCalled()
   })
 
-  it('renders the reset form when a recovery session exists', () => {
+  it('renders the reset form only for a genuine PASSWORD_RECOVERY session', () => {
     render(<ResetPasswordScreen updatePassword={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument()
-    expect(screen.getByLabelText('New Password')).toBeInTheDocument()
+    expect(screen.getByLabelText('New Password', { exact: true })).toBeInTheDocument()
     expect(screen.getByLabelText('Confirm New Password')).toBeInTheDocument()
   })
 
-  it('renders the form for a persisted session even without the recovery event', () => {
+  it('does NOT show the reset form for a normal authenticated session (no recovery authority)', async () => {
+    // Signed in normally (session present) but arrived without going through
+    // Supabase password recovery: this must NOT be treated as recovery.
     mockUseAuthContext.mockReturnValue(recoveryContext({ isPasswordRecovery: false }) as never)
+    const updatePassword = vi.fn()
 
-    render(<ResetPasswordScreen updatePassword={vi.fn()} />)
+    render(<ResetPasswordScreen updatePassword={updatePassword} />)
 
-    expect(screen.getByLabelText('New Password')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText("This reset link can't be used")).toBeInTheDocument()
+    })
+    expect(screen.queryByLabelText('New Password', { exact: true })).not.toBeInTheDocument()
+    expect(updatePassword).not.toHaveBeenCalled()
   })
 
   it('blocks submit when passwords do not meet the rules', async () => {
