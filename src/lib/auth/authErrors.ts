@@ -96,6 +96,110 @@ function inferAuthErrorCode(error: SupabaseLikeAuthError): AuthErrorCode {
   return 'unknown'
 }
 
+export type PasswordResetRequestCategory =
+  | 'sent'
+  | 'rate_limited'
+  | 'service_unavailable'
+  | 'connection_error'
+
+/**
+ * Categorises the outcome of `resetPasswordForEmail`. Account-not-found never
+ * errors in Supabase, so it already collapses to `sent`. Anything we cannot
+ * confidently classify as a transient failure also collapses to `sent` so the
+ * request flow can never reveal whether an account exists.
+ */
+export function categorisePasswordResetRequestError(
+  error: unknown,
+): PasswordResetRequestCategory {
+  if (!error || typeof error !== 'object') {
+    return 'sent'
+  }
+
+  const authError = error as SupabaseLikeAuthError
+  const message = normaliseMessage(authError)
+
+  if (
+    authError.name === 'AuthRetryableFetchError' ||
+    authError.status === 0 ||
+    message.includes('failed to fetch') ||
+    message.includes('network')
+  ) {
+    return 'connection_error'
+  }
+
+  if (authError.status === 429 || message.includes('rate limit')) {
+    return 'rate_limited'
+  }
+
+  if (typeof authError.status === 'number' && authError.status >= 500) {
+    return 'service_unavailable'
+  }
+
+  return 'sent'
+}
+
+export type PasswordUpdateCategory =
+  | 'invalid_recovery_session'
+  | 'weak_password'
+  | 'service_unavailable'
+  | 'connection_error'
+  | 'unknown_error'
+
+/**
+ * Categorises the outcome of `updateUser({ password })` into safe, UI-friendly
+ * buckets. Raw Supabase error text never propagates to the UI.
+ */
+export function categorisePasswordUpdateError(
+  error: unknown,
+): PasswordUpdateCategory {
+  if (!error || typeof error !== 'object') {
+    return 'unknown_error'
+  }
+
+  const authError = error as SupabaseLikeAuthError
+  const message = normaliseMessage(authError)
+
+  if (
+    authError.name === 'AuthRetryableFetchError' ||
+    authError.status === 0 ||
+    message.includes('failed to fetch') ||
+    message.includes('network')
+  ) {
+    return 'connection_error'
+  }
+
+  if (
+    authError.name === 'AuthSessionMissingError' ||
+    authError.status === 401 ||
+    message.includes('session missing') ||
+    message.includes('session not found') ||
+    message.includes('session expired') ||
+    message.includes('jwt expired') ||
+    message.includes('invalid token') ||
+    message.includes('token has expired') ||
+    message.includes('not authenticated')
+  ) {
+    return 'invalid_recovery_session'
+  }
+
+  if (
+    message.includes('password') &&
+    (message.includes('weak') ||
+      message.includes('short') ||
+      message.includes('at least') ||
+      message.includes('should be') ||
+      message.includes('characters'))
+  ) {
+    return 'weak_password'
+  }
+
+  if (typeof authError.status === 'number' && authError.status >= 500) {
+    return 'service_unavailable'
+  }
+
+  return 'unknown_error'
+}
+
 export function mapSignUpError(error: unknown): SafeAuthError {
   const mapped = mapAuthError(error)
 

@@ -16,6 +16,14 @@ export interface AuthContextValue {
   isInitializing: boolean
   user: AuthUser | null
   isAuthenticated: boolean
+  /**
+   * True once Supabase has emitted a `PASSWORD_RECOVERY` auth event for this
+   * browser session (the user arrived via a password-recovery link). Used by
+   * the reset-password screen to confirm a genuine recovery entry. It never
+   * grants entitlement — authentication and entitlement stay separate. Optional
+   * so existing test doubles remain valid.
+   */
+  isPasswordRecovery?: boolean
   signOut: () => Promise<void>
   /**
    * Re-reads the persisted Supabase session and updates the context user. Used
@@ -47,6 +55,7 @@ export function AuthProvider({
 }: AuthProviderProps) {
   const [isInitializing, setIsInitializing] = useState(true)
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -74,9 +83,13 @@ export function AuthProvider({
 
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
       if (!active) {
         return
+      }
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
       }
 
       authEventSeen = true
@@ -114,10 +127,11 @@ export function AuthProvider({
       isInitializing,
       user,
       isAuthenticated,
+      isPasswordRecovery,
       signOut,
       refresh,
     }),
-    [isAuthenticated, isInitializing, refresh, signOut, user],
+    [isAuthenticated, isInitializing, isPasswordRecovery, refresh, signOut, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

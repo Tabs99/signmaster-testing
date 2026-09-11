@@ -1,9 +1,16 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
-import { mapAuthError, mapSignUpError } from './authErrors'
+import {
+  categorisePasswordResetRequestError,
+  categorisePasswordUpdateError,
+  mapAuthError,
+  mapSignUpError,
+} from './authErrors'
 import { getBrowserSupabaseClient } from '../supabase/client'
 import type {
   AuthSessionInfo,
   AuthUser,
+  PasswordResetRequestResult,
+  PasswordUpdateResult,
   SignInResult,
   SignUpResult,
 } from './types'
@@ -17,6 +24,15 @@ export interface SignUpOptions {
   emailRedirectTo?: string
 }
 
+export interface RequestPasswordResetOptions {
+  /**
+   * Dedicated app route Supabase should redirect the recovery email back to
+   * (e.g. `${origin}/reset-password`). Carries no sensitive tokens or
+   * activation identifiers — Supabase appends only the recovery session.
+   */
+  redirectTo?: string
+}
+
 export interface AuthService {
   signUp(
     email: string,
@@ -24,6 +40,11 @@ export interface AuthService {
     options?: SignUpOptions,
   ): Promise<SignUpResult>
   signIn(email: string, password: string): Promise<SignInResult>
+  requestPasswordReset(
+    email: string,
+    options?: RequestPasswordResetOptions,
+  ): Promise<PasswordResetRequestResult>
+  updatePassword(newPassword: string): Promise<PasswordUpdateResult>
   signOut(): Promise<void>
   getSession(): Promise<AuthSessionInfo | null>
   getCurrentUser(): Promise<AuthUser | null>
@@ -151,6 +172,49 @@ export function createAuthService(
           kind: 'error',
           error: mapAuthError(error),
         }
+      }
+    },
+
+    async requestPasswordReset(email, options) {
+      try {
+        const client = deps.getClient()
+        const { error } = await client.auth.resetPasswordForEmail(
+          email.trim(),
+          options?.redirectTo ? { redirectTo: options.redirectTo } : undefined,
+        )
+
+        if (error) {
+          const category = categorisePasswordResetRequestError(error)
+          return { kind: category }
+        }
+
+        return { kind: 'sent' }
+      } catch (error) {
+        const category = categorisePasswordResetRequestError(error)
+        // A thrown value with no recognisable transient signal collapses to
+        // `sent` so the request flow never reveals whether an account exists.
+        return { kind: category }
+      }
+    },
+
+    async updatePassword(newPassword) {
+      try {
+        const client = deps.getClient()
+        const { data, error } = await client.auth.updateUser({
+          password: newPassword,
+        })
+
+        if (error) {
+          return { kind: categorisePasswordUpdateError(error) }
+        }
+
+        if (!data.user) {
+          return { kind: 'invalid_recovery_session' }
+        }
+
+        return { kind: 'success', user: mapUser(data.user) }
+      } catch (error) {
+        return { kind: categorisePasswordUpdateError(error) }
       }
     },
 

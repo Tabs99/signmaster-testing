@@ -62,6 +62,7 @@ export default function SignInScreen({
   signIn = authService.signIn.bind(authService),
   onCreateAccount,
   onRestartActivation,
+  onForgotPassword,
 }: SignInScreenProps) {
   const {
     status: contextStatus,
@@ -320,6 +321,15 @@ export default function SignInScreen({
                     Password does not meet the requirements.
                   </FieldError>
                 ) : null}
+                <div className="mt-2 text-right">
+                  <button
+                    type="button"
+                    onClick={onForgotPassword}
+                    className="text-[13px] font-semibold text-accent-gold underline underline-offset-2"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
               </div>
             </fieldset>
 
