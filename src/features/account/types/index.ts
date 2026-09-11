@@ -3,6 +3,11 @@ import type { SignUpResult } from '../../../lib/auth/types'
 
 export interface CreateAccountScreenProps {
   signUp?: AuthService['signUp']
+  /**
+   * Builds the account-confirmation `emailRedirectTo` URL, embedding the opaque
+   * cross-device continuation reference when an activation context exists.
+   */
+  buildConfirmationRedirect?: (email: string) => Promise<string>
   onSignIn?: () => void
   onRestartActivation?: () => void
 }

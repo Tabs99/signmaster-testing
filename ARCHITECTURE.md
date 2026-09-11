@@ -467,6 +467,117 @@ Customer creates or signs into Supabase Auth account
 | Transaction steps | Read order state → verify `order_retained_target_quantity > 0` → verify not cancelled → verify unclaimed → insert entitlement |
 | Double-claim protection | `UNIQUE(amazon_order_id)` on `app_entitlements` — final safeguard against concurrent claims |
 
+### Completion / finalisation flow (after successful claim)
+
+`/claim` deliberately leaves the activation context **valid** after `SUCCESS` so a lost claim response can be safely retried (Task 5 idempotency). A separate finalisation step closes the activation lifecycle once the user has reached the success state.
+
+```
+Success claim state reached in the browser
+  → user clicks Continue
+  → frontend calls POST /api/activation/complete   (no body; Bearer token + HttpOnly cookie)
+  → api/activation/complete.ts (thin handler):
+      • require authenticated Supabase session (Bearer token → user_id server-side)
+      • require confirmed email (email_confirmed_at)
+      • read the activation-context token from the HttpOnly cookie ONLY
+      • delegate to server/services/activationCompletionService.ts
+  → activationCompletionService.finalizeActivationCompletion:
+      • resolve context from the cookie token (no expiry touch/refresh)
+      • confirm the entitlement for that order exists, is owned by the user, and is active
+      • invalidate the activation context server-side
+  → on COMPLETED: clear the HttpOnly activation-context cookie (Set-Cookie, Max-Age=0)
+  → return a safe status only: { status: 'COMPLETED' | 'NO_CONTEXT' | 'NOT_ELIGIBLE'
+                                 | 'EMAIL_NOT_CONFIRMED' | 'UNAUTHENTICATED' }
+```
+
+The response body never contains the Amazon Order ID, the context token, or entitlement row IDs. Completion never transfers or recreates entitlements — it only verifies ownership and tidies up the one-time activation context/cookie.
+
+### Completion endpoint security & idempotency rules
+
+| Rule | Detail |
+|------|--------|
+| Authentication required | Bearer token validated server-side; `user_id` derived from the session, never from the browser |
+| Confirmed email required | `email_confirmed_at` must be set, otherwise `EMAIL_NOT_CONFIRMED` |
+| Context source | Activation-context token is read from the HttpOnly cookie only — never from JavaScript or the request body |
+| Ownership check | Entitlement must exist, be owned by the authenticated user, and be `active`, otherwise `NOT_ELIGIBLE` |
+| Server-side cleanup | Context is invalidated server-side; the cookie is cleared via `Set-Cookie` (JavaScript never clears it) |
+| Privacy | Response returns a status enum only — no Order ID, context token, `token_hash`, or entitlement IDs |
+| Claim idempotency preserved | On `NOT_ELIGIBLE` the cookie is left intact so Task 5 claim retry idempotency is unaffected |
+
+**Repeated completion semantics (safe to repeat):**
+
+| Situation | Behaviour |
+|-----------|-----------|
+| First completion — context valid, entitlement owned + active | Invalidate context, clear cookie, return `COMPLETED` |
+| Repeat with the cookie already cleared | No cookie to read → return `NO_CONTEXT` (no side effects); the UI keeps showing the activated state |
+| Repeat with a stale cookie whose context is invalidated/expired | Resolves to `NO_CONTEXT`; the stale cookie is cleared |
+| Cleanup failure (invalidate throws) | Completion errors out with the context/cookie intact so the user can retry — no partial finalisation |
+
+### Completion outcome authority (finalisation is authoritative)
+
+The Task 5 claim `SUCCESS` grants the entitlement, but the completion check re-verifies ownership/active status **at finalisation time** and is authoritative. A stale claim `SUCCESS` must never paper over a negative completion outcome. The continuation view resolver (`src/features/activation/utils/activationContinuation.ts` → `resolveSuccessView`) maps each completion outcome as follows:
+
+| Completion outcome after claim SUCCESS | Continuation view | Shows "activated"? |
+|----------------------------------------|-------------------|--------------------|
+| `COMPLETED` | `activated` | Yes |
+| `NO_CONTEXT` | `activated` | Yes — deliberate recovery: an empty context after a successful claim means finalisation already happened (see repeated-completion semantics above) |
+| `NOT_ELIGIBLE` (e.g. entitlement revoked between claim and completion) | `finalize_not_eligible` | **No** — safe access/finalisation failure, no internal reason exposed |
+| `EMAIL_NOT_CONFIRMED` | `finalize_email_not_confirmed` | **No** — confirmation/re-auth recovery |
+| `UNAUTHENTICATED` | `finalize_unauthenticated` | **No** — sign-in/re-auth recovery |
+| `service_unavailable` / `connection_error` | `finalize_retryable_error` | Access stays active; only cleanup is retryable |
+
+`useActivationCompletion` only marks the completion **terminal** (permanently disabling another attempt) for `COMPLETED` and `NO_CONTEXT`. `NOT_ELIGIBLE`, `EMAIL_NOT_CONFIRMED`, `UNAUTHENTICATED`, and transient failures leave completion retryable so the user can recover with an explicit action — there is no automatic retry loop.
+
+### Cross-device / cross-browser confirmation (continuation reference)
+
+The activation-context cookie (Task 4) provides continuity only within the **same browser/device**. Email confirmation that completes in a *different* browser (e.g. the customer opens the confirmation email on their phone) will not carry the HttpOnly cookie. Task 6 closes this gap with a short-lived, opaque, single-use, server-side **continuation reference**.
+
+**Reference lifecycle**
+
+```
+Original browser (has activation-context cookie):
+  eligible order → activation context created → "Create Account & Continue"
+    → POST /api/activation/continuation  (reads context cookie server-side; body: { email })
+        → activationContinuationService.createActivationContinuation:
+            • resolve context token → amazon_order_id (server-side; no touch/refresh)
+            • generate opaque reference (32 random bytes, base64url)
+            • store SHA-256(reference) + amazon_order_id + normalised email + expires_at
+        → returns the raw reference to the browser
+    → signUp(..., { emailRedirectTo: `${origin}/activation/continue?ref=<opaque>` })
+    → Supabase sends the confirmation email carrying the opaque ref in the link
+
+Confirming device (any browser; NO original cookie):
+  clicks the email link → Supabase establishes the confirmed session (detectSessionInUrl)
+    → lands on /activation/continue?ref=<opaque> (ActivationContinueScreen)
+    → POST /api/activation/continue  (Bearer token + body: { ref })
+        → require authenticated + confirmed session
+        → activationContinuationService.consumeActivationContinuation:
+            • generate the raw context token app-side (only its hash is stored)
+            • call the `consume_activation_continuation` Postgres function, which
+              in ONE transaction: SELECT ... FOR UPDATE the reference, verify
+              hash/email/not-consumed/not-expired, mark consumed_at, and INSERT
+              the fresh activation_context for the same amazon_order_id
+        → on CONTINUED: re-issue the HttpOnly activation-context cookie on this device
+    → resume to /create-account → resolver sees VALID context + confirmed auth
+    → normal Task 5 claim → success (claim rules unchanged)
+```
+
+**TTL & single-use**
+
+- TTL: `ACTIVATION_CONTINUATION_LIFETIME_SECONDS` = 30 minutes (`server/activation/continuationReference.ts`).
+- Single-use & atomicity: consume and fresh-context creation run in a single transaction (`consume_activation_continuation`). Either both happen (`CONTINUED`) or neither does — if the context insert fails the transaction rolls back and the reference stays unconsumed (the exchange is retryable). Concurrent consumes serialise on a `SELECT ... FOR UPDATE` row lock, so exactly one succeeds and exactly one context is created; the loser resolves to `ALREADY_CONSUMED`. The function is `service_role`-only (execute revoked from `anon`/`authenticated`) and returns a status enum only — never the order id, continuation/context hashes, or database ids. The raw context token is generated app-side so the browser only ever receives the resulting HttpOnly cookie.
+
+**Privacy boundary**
+
+- The browser-visible reference is an opaque random token. It carries **no** Amazon Order ID, activation-context token, `token_hash`, user id, email, or reusable credential.
+- The server stores only the SHA-256 hash of the reference (never the raw value), the order id, and the normalised sign-up email as a binding key. All continuation state is resolved server-side.
+- The sign-up email is a **binding key only**: the authoritative identity is the confirmed Supabase session at consume time (`email` from the validated Bearer token). A different authenticated user cannot consume another user's reference; mismatches resolve to `INVALID` with no account/order enumeration.
+- Consuming a reference only re-establishes an activation *context* (a verified-order pointer). It never grants an entitlement — the entitlement claim still follows the unchanged Task 5 authenticated/confirmed/atomic rules.
+
+**Fallback / recovery**
+
+- Unknown, malformed, expired, already-consumed, or mismatched-email references all resolve to a safe recovery state on `/activation/continue` ("This activation link can't be used" → Sign in / Verify my order). No enumeration.
+- No `ref` present, or an unauthenticated confirming device: the screen routes onward (resume when already authenticated, otherwise prompt sign-in), so the **same-browser** path — return to the original tab, click "I've confirmed my email", refresh session, claim — is unaffected. Both paths coexist.
+
 ### Current vs target gap
 
 | Aspect | Current (prototype) | Target |
@@ -477,6 +588,7 @@ Customer creates or signs into Supabase Auth account
 | Routing | `App.tsx` step state | React Router `/activate` route |
 | Auth | Not integrated | Supabase Auth |
 | Claim | localStorage flag | `POST /api/activation/claim` → `app_entitlements` |
+| Completion | localStorage `complete` step | `POST /api/activation/complete` → invalidate context + clear cookie |
 
 ---
 
@@ -1025,3 +1137,6 @@ sequenceDiagram
 | 2026-09-01 | Added responsive design and browser compatibility requirements; extended testing strategy with cross-viewport Playwright coverage |
 | 2026-09-01 | Clean-up: cross-browser testing strategy, app_entitlements FK, order-level retained quantity, responsive numbering, reconciliation_checkpoint |
 | 2026-09-03 | CI workflow documented; corrected stale “not yet present” notes for `api/`, `server/`, `e2e/`, Playwright, Supabase migrations, activation verify, and order-sync foundation |
+| 2026-09-06 | Task 6: documented activation completion/finalisation flow (`POST /api/activation/complete`), completion endpoint security & repeat-completion idempotency rules, and the cross-device confirmation note (deferred continuation reference) |
+| 2026-09-07 | Task 6 corrections: completion outcome authority (a claim SUCCESS no longer overrides `NOT_ELIGIBLE` / `EMAIL_NOT_CONFIRMED` / `UNAUTHENTICATED` at finalisation; terminal-only completion lock) and implemented true cross-device confirmation via a short-lived, opaque, single-use, server-side continuation reference (`POST /api/activation/continuation` + `POST /api/activation/continue`, `activation_continuations` table) |
+| 2026-09-10 | Task 6 atomicity correction: cross-device continuation exchange (consume reference + create fresh context) is now a single transaction via the `service_role`-only `consume_activation_continuation` Postgres function — all-or-nothing with rollback-on-failure (retryable) and `SELECT ... FOR UPDATE` concurrency serialisation |

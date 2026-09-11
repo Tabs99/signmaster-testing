@@ -14,7 +14,7 @@ vi.mock('../../auth/context/AuthProvider', () => ({
 }))
 
 vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
-  useActivationClaimWhenReady: vi.fn(() => ({ kind: 'idle' })),
+  useActivationClaimWhenReady: vi.fn(() => ({ state: { kind: 'idle' }, retry: vi.fn() })),
 }))
 
 import { resolveActivationContext } from '../../../lib/api/activationContextApi'
@@ -160,7 +160,12 @@ describe('CreateAccountScreen', () => {
         }),
     )
 
-    render(<CreateAccountScreen signUp={signUp} />)
+    render(
+      <CreateAccountScreen
+        signUp={signUp}
+        buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+      />,
+    )
 
     await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
     await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
@@ -197,7 +202,12 @@ describe('CreateAccountScreen', () => {
       },
     })
 
-    render(<CreateAccountScreen signUp={signUp} />)
+    render(
+      <CreateAccountScreen
+        signUp={signUp}
+        buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+      />,
+    )
 
     await user.type(screen.getByLabelText('Email Address'), 'exists@example.invalid')
     await user.type(screen.getByLabelText('Create Password'), 'Secure123!')
@@ -221,7 +231,12 @@ describe('CreateAccountScreen', () => {
       user: { id: '2', email: 'pending@example.invalid', emailConfirmed: false },
     })
 
-    render(<CreateAccountScreen signUp={signUp} />)
+    render(
+      <CreateAccountScreen
+        signUp={signUp}
+        buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+      />,
+    )
 
     await user.type(screen.getByLabelText('Email Address'), 'pending@example.invalid')
     await user.type(screen.getByLabelText('Create Password'), 'Secure123!')

@@ -8,8 +8,21 @@ import type {
   SignUpResult,
 } from './types'
 
+export interface SignUpOptions {
+  /**
+   * Where Supabase should redirect after the user confirms their email. Used to
+   * carry the opaque cross-device activation continuation reference so the
+   * journey can resume on the confirming device.
+   */
+  emailRedirectTo?: string
+}
+
 export interface AuthService {
-  signUp(email: string, password: string): Promise<SignUpResult>
+  signUp(
+    email: string,
+    password: string,
+    options?: SignUpOptions,
+  ): Promise<SignUpResult>
   signIn(email: string, password: string): Promise<SignInResult>
   signOut(): Promise<void>
   getSession(): Promise<AuthSessionInfo | null>
@@ -38,12 +51,15 @@ export function createAuthService(
   deps: AuthServiceDeps = { getClient: getBrowserSupabaseClient },
 ): AuthService {
   return {
-    async signUp(email, password) {
+    async signUp(email, password, options) {
       try {
         const client = deps.getClient()
         const { data, error } = await client.auth.signUp({
           email: email.trim(),
           password,
+          ...(options?.emailRedirectTo
+            ? { options: { emailRedirectTo: options.emailRedirectTo } }
+            : {}),
         })
 
         if (error) {

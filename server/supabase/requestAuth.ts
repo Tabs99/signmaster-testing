@@ -3,6 +3,7 @@ import { createServiceRoleClientFromEnv } from './client.ts'
 
 export interface AuthenticatedRequestUser {
   id: string
+  email: string
   emailConfirmed: boolean
 }
 
@@ -39,6 +40,7 @@ export function extractBearerToken(
 export function mapAuthenticatedRequestUser(user: User): AuthenticatedRequestUser {
   return {
     id: user.id,
+    email: user.email ?? '',
     emailConfirmed: Boolean(user.email_confirmed_at),
   }
 }

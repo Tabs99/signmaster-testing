@@ -48,6 +48,39 @@ function mockActivationContextCreate(page: Page) {
   })
 }
 
+function mockContinuationCreate(page: Page) {
+  return page.route('**/api/activation/continuation', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'CREATED',
+        reference: 'e2e-continuation-reference-0123456789abcdef',
+      }),
+    })
+  })
+}
+
+function mockActivationClaim(page: Page, status: string) {
+  return page.route('**/api/activation/claim', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status }),
+    })
+  })
+}
+
 async function fillValidOrderId(page: Page) {
   await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
 }
@@ -94,9 +127,13 @@ test.describe('SignMaster auth foundation', () => {
     await expect(page.getByRole('heading', { name: 'Sign in to SignMaster' })).toBeVisible()
   })
 
-  test('create-account basic flow with mocked Supabase sign-up', async ({ page }) => {
+  test('create-account with confirmed session and valid context activates access', async ({
+    page,
+  }) => {
     await mockSupabaseSignUpSuccess(page, AUTH_TEST_EMAIL)
     await mockActivationContextCreate(page)
+    await mockContinuationCreate(page)
+    await mockActivationClaim(page, 'SUCCESS')
     await page.goto('/create-account')
 
     await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)
@@ -104,20 +141,21 @@ test.describe('SignMaster auth foundation', () => {
     await page.getByLabel('Confirm Password').fill(AUTH_TEST_PASSWORD)
     await page.getByRole('button', { name: 'Create Account & Continue' }).click()
 
-    await expect(page.getByText('Account created!')).toBeVisible()
-    await expect(page.getByText(/Activation will continue in a later step/i)).toBeVisible()
+    await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
+    await expect(page.locator('[data-claim-outcome="success"]')).toBeVisible()
   })
 
-  test('sign-in basic flow with mocked Supabase token exchange', async ({ page }) => {
+  test('sign-in with confirmed session and valid context activates access', async ({ page }) => {
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
     await mockActivationContextCreate(page)
+    await mockActivationClaim(page, 'SUCCESS')
     await page.goto('/sign-in')
 
     await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)
     await page.locator('#sign-in-password').fill(AUTH_TEST_PASSWORD)
     await page.getByRole('button', { name: 'Sign in' }).click()
 
-    await expect(page.getByText("You're signed in")).toBeVisible()
-    await expect(page.getByText(/companion app access is not unlocked yet/i)).toBeVisible()
+    await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
+    await expect(page.locator('[data-claim-outcome="success"]')).toBeVisible()
   })
 })

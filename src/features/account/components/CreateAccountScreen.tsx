@@ -8,10 +8,13 @@ import {
 } from '../../activation/components/ActivationContextNotice'
 import { useActivationContextResolution } from '../../activation/hooks/useActivationContextResolution'
 import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
+import ActivationClaimResult from '../../activation/components/ActivationClaimResult'
+import EmailConfirmationContinuation from './EmailConfirmationContinuation'
 import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import { authService } from '../../../lib/auth/authService'
+import { buildConfirmationContinuationRedirect } from '../../../lib/activation/confirmationRedirect'
 import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
 import { useAuthContext } from '../../auth/context/AuthProvider'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
@@ -32,17 +35,6 @@ import {
 import EyeToggle from './EyeToggle'
 import PasswordRequirement from './PasswordRequirement'
 import ValidTick from './ValidTick'
-
-function EmailConfirmationCard() {
-  return (
-    <article className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl">
-      <p className="text-xl font-extrabold tracking-tight text-white">Confirm your email</p>
-      <p className="mt-2 text-sm leading-relaxed text-white/65">
-        {AUTH_MESSAGES.emailConfirmationRequired}
-      </p>
-    </article>
-  )
-}
 
 function AccountSuccessCard({ claimOutcome }: { claimOutcome?: string }) {
   return (
@@ -140,6 +132,7 @@ function ExistingAccountAlert({ onSignIn }: { onSignIn?: () => void }) {
 
 export default function CreateAccountScreen({
   signUp = authService.signUp.bind(authService),
+  buildConfirmationRedirect = buildConfirmationContinuationRedirect,
   onSignIn,
   onRestartActivation,
 }: CreateAccountScreenProps) {
@@ -149,7 +142,12 @@ export default function CreateAccountScreen({
     error: contextError,
     retry: retryContextResolution,
   } = useActivationContextResolution()
-  const { isAuthenticated, user, isInitializing: authInitializing } = useAuthContext()
+  const {
+    isAuthenticated,
+    user,
+    isInitializing: authInitializing,
+    refresh: refreshAuth,
+  } = useAuthContext()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
@@ -202,7 +200,10 @@ export default function CreateAccountScreen({
   ])
 
   const claimReady = resumeState === 'valid_context_confirmed_auth'
-  const claimState = useActivationClaimWhenReady({ ready: claimReady })
+  const { state: claimState, retry: retryClaim } = useActivationClaimWhenReady({
+    ready: claimReady,
+  })
+  const claimActive = claimState.kind !== 'idle'
   const claimOutcome =
     claimState.kind === 'outcome' ? claimState.outcome : undefined
 
@@ -271,7 +272,8 @@ export default function CreateAccountScreen({
       setFormStatus('loading')
 
       try {
-        const result = await signUp(email, password)
+        const emailRedirectTo = await buildConfirmationRedirect(email)
+        const result = await signUp(email, password, { emailRedirectTo })
 
         if (result.kind === 'success') {
           setFormStatus('done')
@@ -297,13 +299,67 @@ export default function CreateAccountScreen({
         submitInFlightRef.current = false
       }
     },
-    [contextError, contextLoading, email, emailOk, matchOk, passwordOk, signUp],
+    [
+      buildConfirmationRedirect,
+      contextError,
+      contextLoading,
+      email,
+      emailOk,
+      matchOk,
+      passwordOk,
+      signUp,
+    ],
   )
+
+  const recheckEmailConfirmation = useCallback(async () => {
+    if (!refreshAuth) {
+      return false
+    }
+
+    const updated = await refreshAuth()
+    return Boolean(updated?.emailConfirmed)
+  }, [refreshAuth])
+
+  const handleEmailConfirmed = useCallback(() => {
+    setFormStatus('done')
+  }, [])
+
+  const handleChangeEmail = useCallback(() => {
+    setFormStatus('idle')
+    setEmail('')
+    setPassword('')
+    setConfirm('')
+    setEmailTouched(false)
+    setPasswordTouched(false)
+    setConfirmTouched(false)
+    setSubmitAttempted(false)
+    setAuthError(null)
+  }, [])
 
   const isLoading = formStatus === 'loading'
   const contextResolutionBlocked = contextLoading || contextError
   const canSubmit =
     emailOk && passwordOk && matchOk && !isLoading && !contextResolutionBlocked
+
+  // Show the claim/continuation result whenever a claim is active. This covers
+  // both the same-device path (after form submit) and the cross-device resume,
+  // where the confirming device lands here already authenticated with a valid
+  // context and the claim runs without a fresh form submission.
+  if (claimActive) {
+    return (
+      <PageShell>
+        <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
+          <BrandLockup variant="desktop" />
+          <ActivationClaimResult
+            claimState={claimState}
+            onRetryClaim={retryClaim}
+            onSignIn={onSignIn}
+            onRestartActivation={onRestartActivation}
+          />
+        </div>
+      </PageShell>
+    )
+  }
 
   if (formStatus === 'done') {
     return (
@@ -321,7 +377,12 @@ export default function CreateAccountScreen({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           <BrandLockup variant="desktop" />
-          <EmailConfirmationCard />
+          <EmailConfirmationContinuation
+            onConfirmed={handleEmailConfirmed}
+            onSignIn={onSignIn}
+            onChangeEmail={handleChangeEmail}
+            recheck={recheckEmailConfirmation}
+          />
         </div>
       </PageShell>
     )

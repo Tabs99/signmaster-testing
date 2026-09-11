@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import CreateAccountScreen from './features/account/components/CreateAccountScreen'
 import SignInScreen from './features/account/components/SignInScreen'
 import ActivationStep1 from './features/activation/components/ActivationStep1'
+import ActivationContinueScreen from './features/activation/components/ActivationContinueScreen'
 import { AuthProvider } from './features/auth/context/AuthProvider'
 
 function AppRoutes() {
@@ -33,6 +34,16 @@ function AppRoutes() {
         element={
           <SignInScreen
             onCreateAccount={() => navigate('/create-account')}
+            onRestartActivation={() => navigate('/activate')}
+          />
+        }
+      />
+      <Route
+        path="/activation/continue"
+        element={
+          <ActivationContinueScreen
+            onResume={() => navigate('/create-account', { replace: true })}
+            onSignIn={() => navigate('/sign-in')}
             onRestartActivation={() => navigate('/activate')}
           />
         }

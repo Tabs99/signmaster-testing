@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useActivationClaimWhenReady } from '../useActivationClaimWhenReady'
 
@@ -14,7 +14,7 @@ describe('useActivationClaimWhenReady', () => {
     )
 
     await waitFor(() => {
-      expect(result.current).toEqual({ kind: 'outcome', outcome: 'success' })
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'success' })
     })
 
     expect(claim).toHaveBeenCalledTimes(1)
@@ -48,7 +48,7 @@ describe('useActivationClaimWhenReady', () => {
     )
 
     await waitFor(() => {
-      expect(result.current).toEqual({ kind: 'outcome', outcome: 'success' })
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'success' })
     })
 
     rerender({ ready: true })
@@ -69,7 +69,10 @@ describe('useActivationClaimWhenReady', () => {
     )
 
     await waitFor(() => {
-      expect(result.current).toEqual({ kind: 'outcome', outcome: 'already_claimed' })
+      expect(result.current.state).toEqual({
+        kind: 'outcome',
+        outcome: 'already_claimed',
+      })
     })
   })
 
@@ -84,7 +87,56 @@ describe('useActivationClaimWhenReady', () => {
     )
 
     await waitFor(() => {
-      expect(result.current).toEqual({ kind: 'outcome', outcome: 'not_eligible' })
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'not_eligible' })
     })
+  })
+
+  it('retries after a transient service error and does not run concurrently', async () => {
+    const claim = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'service_unavailable' })
+      .mockResolvedValueOnce({ kind: 'outcome', outcome: 'success' })
+
+    const { result } = renderHook(() =>
+      useActivationClaimWhenReady({
+        ready: true,
+        claim,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ kind: 'service_unavailable' })
+    })
+
+    act(() => {
+      result.current.retry()
+    })
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'success' })
+    })
+
+    expect(claim).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores retry after a definitive outcome', async () => {
+    const claim = vi.fn().mockResolvedValue({ kind: 'outcome', outcome: 'success' })
+
+    const { result } = renderHook(() =>
+      useActivationClaimWhenReady({
+        ready: true,
+        claim,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'success' })
+    })
+
+    act(() => {
+      result.current.retry()
+    })
+
+    expect(claim).toHaveBeenCalledTimes(1)
   })
 })

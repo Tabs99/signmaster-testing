@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   claimActivationEntitlement,
   type ActivationClaimOutcome,
@@ -20,6 +20,18 @@ export interface UseActivationClaimWhenReadyOptions {
   }) => Promise<ActivationClaimResult>
 }
 
+export interface UseActivationClaimWhenReadyResult {
+  state: ActivationClaimState
+  /**
+   * Re-attempts the claim after a transient service/connection failure. A
+   * definitive outcome (success/already_claimed) is terminal and cannot be
+   * retried, and a retry is ignored while a request is in flight, so the claim
+   * still runs at most once per definitive result and never issues duplicate
+   * concurrent requests.
+   */
+  retry: () => void
+}
+
 function mapClaimResult(result: ActivationClaimResult): ActivationClaimState {
   if (result.kind === 'outcome') {
     return { kind: 'outcome', outcome: result.outcome }
@@ -30,9 +42,10 @@ function mapClaimResult(result: ActivationClaimResult): ActivationClaimState {
 
 export function useActivationClaimWhenReady(
   options: UseActivationClaimWhenReadyOptions,
-): ActivationClaimState {
+): UseActivationClaimWhenReadyResult {
   const claim = options.claim ?? claimActivationEntitlement
   const [state, setState] = useState<ActivationClaimState>({ kind: 'idle' })
+  const [attempt, setAttempt] = useState(0)
   const inFlightRef = useRef(false)
   const completedRef = useRef(false)
 
@@ -57,7 +70,15 @@ export function useActivationClaimWhenReady(
       setState(mapClaimResult(result))
       inFlightRef.current = false
     })()
-  }, [claim, options.ready])
+  }, [claim, options.ready, attempt])
 
-  return state
+  const retry = useCallback(() => {
+    if (inFlightRef.current || completedRef.current) {
+      return
+    }
+
+    setAttempt((current) => current + 1)
+  }, [])
+
+  return { state, retry }
 }
