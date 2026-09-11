@@ -176,6 +176,18 @@ describe('SignInScreen', () => {
     expect(onCreateAccount).toHaveBeenCalledOnce()
   })
 
+  it('exposes a Forgot password action', async () => {
+    const user = userEvent.setup()
+    const onForgotPassword = vi.fn()
+
+    render(<SignInScreen onForgotPassword={onForgotPassword} />)
+
+    const forgot = await screen.findByRole('button', { name: 'Forgot password?' })
+    await user.click(forgot)
+
+    expect(onForgotPassword).toHaveBeenCalledOnce()
+  })
+
   it('requests claim when context and confirmed auth are ready', async () => {
     mockUseAuthContext.mockReturnValue({
       isInitializing: false,
