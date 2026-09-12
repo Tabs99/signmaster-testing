@@ -26,6 +26,7 @@ describe('activation test fixture helpers', () => {
       '555-5555555-5555555',
       '666-6666666-6666666',
       '777-7777777-7777777',
+      '888-8888888-8888888',
     ])
   })
 
@@ -33,7 +34,7 @@ describe('activation test fixture helpers', () => {
     expect(ACTIVATION_TEST_SEED_ORDER_IDS).not.toContain(
       ACTIVATION_TEST_NOT_FOUND_ABSENT_ORDER_ID,
     )
-    expect(ACTIVATION_TEST_SEED_ORDER_IDS).toHaveLength(7)
+    expect(ACTIVATION_TEST_SEED_ORDER_IDS).toHaveLength(8)
   })
 
   it('builds cleanup SQL constrained to reserved fixture IDs only', () => {
@@ -64,6 +65,11 @@ describe('activation test fixture helpers', () => {
     expect(getActivationTestFixtureExpectations()).toEqual([
       expect.objectContaining({
         orderId: '000-0000000-0000000',
+        expectedStatus: 'ELIGIBLE',
+        seedable: true,
+      }),
+      expect.objectContaining({
+        orderId: '888-8888888-8888888',
         expectedStatus: 'ELIGIBLE',
         seedable: true,
       }),
@@ -115,6 +121,29 @@ describe('activation test fixture helpers', () => {
     expect(wrongProductSeed).toBeDefined()
     expect(wrongProductSeed!.items[0]?.asin).not.toBe(targetAsin)
     expect(getWrongProductFixtureAsin(targetAsin)).not.toBe(targetAsin)
+  })
+
+  it('seeds 888 as a second straightforward eligible shipped order', () => {
+    const targetAsin = 'B0TEST12345'
+    const eligible888 = buildActivationTestOrderSeeds(targetAsin).find(
+      (seed) => seed.orderId === '888-8888888-8888888',
+    )
+
+    expect(eligible888).toEqual({
+      orderId: '888-8888888-8888888',
+      fulfillmentStatus: 'SHIPPED',
+      createEntitlement: false,
+      items: [
+        {
+          orderItemId: 'fixture-item-888',
+          asin: targetAsin,
+          quantityOrdered: 1,
+          quantityFulfilled: 1,
+          quantityReturned: 0,
+          sku: 'FIXTURE-888-ELIGIBLE',
+        },
+      ],
+    })
   })
 
   it('keeps retained quantity above zero for the partial-return fixture', () => {

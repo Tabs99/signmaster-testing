@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { formatOrderId, normalisePastedOrderId } from '../formatting'
+import {
+  cursorPositionAfterDigits,
+  formatOrderId,
+  insertOrderIdDigit,
+  normalisePastedOrderId,
+} from '../formatting'
 import {
   countOrderIdDigits,
   isValidOrderId,
@@ -42,5 +47,18 @@ describe('formatting', () => {
 
   it('normalises pasted order IDs', () => {
     expect(normalisePastedOrderId('  20212345678901234  ')).toBe('202-1234567-8901234')
+  })
+
+  it('inserts digits for key-repeat at the current selection', () => {
+    expect(insertOrderIdDigit('0', '0', 1, 1)).toBe('00')
+    expect(insertOrderIdDigit('000-0', '0', 5, 5)).toBe('000-00')
+    const fullOrderId = '205-1234567-1234567'
+    expect(
+      insertOrderIdDigit(fullOrderId, '9', fullOrderId.length, fullOrderId.length),
+    ).toBe(fullOrderId)
+  })
+
+  it('places the caret after the inserted digit count', () => {
+    expect(cursorPositionAfterDigits('000-0', 4)).toBe(5)
   })
 })

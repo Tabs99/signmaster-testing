@@ -151,7 +151,7 @@ function resolvePlateContent(
     case 'activated_pending_finalize':
       return {
         tone: 'success',
-        heading: "You're in — SignMaster is activated",
+        heading: "You're in. SignMaster is activated",
         body: [
           'Your purchase is verified and your app access is now active on this account.',
         ],
@@ -160,7 +160,7 @@ function resolvePlateContent(
     case 'finalizing':
       return {
         tone: 'success',
-        heading: "You're in — SignMaster is activated",
+        heading: "You're in. SignMaster is activated",
         body: [
           'Your purchase is verified and your app access is now active on this account.',
         ],

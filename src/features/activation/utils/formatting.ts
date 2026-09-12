@@ -1,5 +1,7 @@
+const MAX_ORDER_ID_DIGITS = 17
+
 export function formatOrderId(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 17)
+  const digits = raw.replace(/\D/g, '').slice(0, MAX_ORDER_ID_DIGITS)
 
   if (digits.length <= 3) {
     return digits
@@ -14,4 +16,54 @@ export function formatOrderId(raw: string): string {
 
 export function normalisePastedOrderId(raw: string): string {
   return formatOrderId(raw.trim())
+}
+
+export function countDigitsBeforeIndex(formatted: string, index: number): number {
+  let count = 0
+  const clamped = Math.max(0, Math.min(index, formatted.length))
+
+  for (let i = 0; i < clamped; i++) {
+    const char = formatted[i]
+    if (char >= '0' && char <= '9') {
+      count++
+    }
+  }
+
+  return count
+}
+
+export function cursorPositionAfterDigits(formatted: string, digitCount: number): number {
+  if (digitCount <= 0) {
+    return 0
+  }
+
+  let seen = 0
+  for (let i = 0; i < formatted.length; i++) {
+    const char = formatted[i]
+    if (char >= '0' && char <= '9') {
+      seen++
+      if (seen === digitCount) {
+        return i + 1
+      }
+    }
+  }
+
+  return formatted.length
+}
+
+export function insertOrderIdDigit(
+  formattedValue: string,
+  digit: string,
+  selectionStart: number,
+  selectionEnd: number,
+): string {
+  const digits = formattedValue.replace(/\D/g, '')
+  const digitStart = countDigitsBeforeIndex(formattedValue, selectionStart)
+  const digitEnd = countDigitsBeforeIndex(formattedValue, selectionEnd)
+  const nextDigits = `${digits.slice(0, digitStart)}${digit}${digits.slice(digitEnd)}`.slice(
+    0,
+    MAX_ORDER_ID_DIGITS,
+  )
+
+  return formatOrderId(nextDigits)
 }
