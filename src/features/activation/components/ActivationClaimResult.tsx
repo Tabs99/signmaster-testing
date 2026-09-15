@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useActivationCompletion } from '../hooks/useActivationCompletion'
 import type { ActivationClaimState } from '../hooks/useActivationClaimWhenReady'
 import type { ActivationCompletionResult } from '../../../lib/api/activationCompletionApi'
@@ -70,8 +71,30 @@ export default function ActivationClaimResult({
   const completion = useActivationCompletion(complete ? { complete } : {})
   const view = resolveActivationContinuationView(claimState, completion.state)
 
+  // Once finalisation has succeeded (view === 'activated'), enter the app
+  // directly instead of parking the user on a second, redundant success screen.
+  // `onContinue` is a stable callback (see App.tsx), and 'activated' is a
+  // terminal success view, so this effect navigates exactly once.
+  useEffect(() => {
+    if (view === 'activated' && onContinue) {
+      onContinue()
+    }
+  }, [view, onContinue])
+
   if (view === 'idle') {
     return null
+  }
+
+  if (view === 'activated' && onContinue) {
+    return (
+      <div
+        className="w-full max-w-[420px]"
+        data-continuation-view={view}
+        data-claim-outcome={claimOutcomeAttribute(claimState)}
+      >
+        <LoadingCard message="Opening SignMaster…" />
+      </div>
+    )
   }
 
   if (view === 'claiming') {

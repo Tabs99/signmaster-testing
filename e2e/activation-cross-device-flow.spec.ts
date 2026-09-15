@@ -98,12 +98,16 @@ function mockClaim(page: Page, status: string) {
   })
 }
 
-function mockComplete(page: Page, status: string) {
+function mockComplete(page: Page, status: string, afterComplete?: () => void) {
   return page.route('**/api/activation/complete', async (route) => {
     if (route.request().method() !== 'POST') {
       await route.continue()
       return
     }
+
+    // A successful finalisation grants the entitlement, so a subsequent `/app`
+    // entitlement check must see ACTIVE.
+    afterComplete?.()
 
     await route.fulfill({
       status: 200,
@@ -113,16 +117,34 @@ function mockComplete(page: Page, status: string) {
   })
 }
 
+function mockEntitlement(page: Page, getStatus: () => 'NONE' | 'ACTIVE') {
+  return page.route('**/api/entitlement/me', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: getStatus() }),
+    })
+  })
+}
+
 test.describe('SignMaster cross-device activation continuation', () => {
   test('resumes activation on the confirming device without the original cookie', async ({
     page,
   }) => {
     const continueCounter = { count: 0 }
+    const entitlement = { status: 'NONE' as 'NONE' | 'ACTIVE' }
     await seedConfirmedSession(page)
+    await mockEntitlement(page, () => entitlement.status)
     await mockContinue(page, 'CONTINUED', continueCounter)
     await mockContextResolve(page, 'VALID')
     await mockClaim(page, 'SUCCESS')
-    await mockComplete(page, 'COMPLETED')
+    await mockComplete(page, 'COMPLETED', () => {
+      entitlement.status = 'ACTIVE'
+    })
 
     await page.goto(`/activation/continue?ref=${REFERENCE}`)
 
@@ -132,7 +154,11 @@ test.describe('SignMaster cross-device activation continuation', () => {
     await expect(page.locator('[data-claim-outcome="success"]')).toBeVisible()
 
     await page.getByRole('button', { name: 'Continue' }).click()
-    await expect(page.getByText('Your SignMaster access is active')).toBeVisible()
+
+    // Finalisation navigates straight into the app on the confirming device.
+    await expect(page).toHaveURL(/\/app$/)
+    await expect(page.getByTestId('app-access')).toBeVisible()
+    await expect(page.getByText('Your SignMaster access is active')).toHaveCount(0)
 
     expect(continueCounter.count).toBe(1)
   })
