@@ -260,13 +260,19 @@ full-stack mode.
 
 | Command | What it serves | Serves `/api/*`? | Needs local Supabase? |
 |---------|----------------|------------------|-----------------------|
-| `npm run dev` | Vite frontend only, port **4200** | ❌ No | No (frontend only) |
+| `npm run dev` | Vite frontend only, port **4200** | ❌ No | Depends on the work (see below) |
 | `npm run dev:full` | Full stack via Vercel CLI, port **4200** | ✅ Yes | Yes |
 
-> **`npm run dev` does not serve `/api/*`.** Use it for pure UI work (and it is what the E2E suite
-> uses, because E2E mocks every API call). For anything that hits a real API route, use
-> `npm run dev:full`, which runs the Vercel dev server locally and reads server secrets from
-> `.env.local`.
+`npm run dev` serves the frontend only and never serves `/api/*`. Whether it needs local Supabase
+depends on what you are doing:
+
+- **Pure / mock frontend work** (styling, layout, component behaviour, and the Playwright E2E suite,
+  which mocks every API and Supabase Auth call) → **local Supabase is not required.**
+- **Real auth testing** (actual sign-up, sign-in, password recovery, or any real Supabase Auth
+  flow) → **local Supabase is required**, and `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` must
+  point at it (`npx supabase start`, values from `npx supabase status`).
+- **Real `/api/*` backend testing** → use **`npm run dev:full`** (frontend + serverless routes),
+  which also requires local Supabase and reads server secrets from `.env.local`.
 
 ### Quick start (from a fresh clone)
 
