@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import CreateAccountScreen from './features/account/components/CreateAccountScreen'
 import SignInScreen from './features/account/components/SignInScreen'
@@ -11,6 +12,12 @@ import { AuthProvider } from './features/auth/context/AuthProvider'
 
 function AppRoutes() {
   const navigate = useNavigate()
+  // Stable identity so the post-activation auto-navigation effect in
+  // ActivationClaimResult depends on a callback that never changes, and
+  // therefore fires exactly once when finalisation succeeds.
+  const enterApp = useCallback(() => {
+    navigate('/app')
+  }, [navigate])
 
   return (
     <Routes>
@@ -30,7 +37,7 @@ function AppRoutes() {
           <CreateAccountScreen
             onSignIn={() => navigate('/sign-in')}
             onRestartActivation={() => navigate('/activate')}
-            onEnterApp={() => navigate('/app')}
+            onEnterApp={enterApp}
           />
         }
       />
@@ -40,7 +47,7 @@ function AppRoutes() {
           <SignInScreen
             onCreateAccount={() => navigate('/create-account')}
             onForgotPassword={() => navigate('/forgot-password')}
-            onEnterApp={() => navigate('/app')}
+            onEnterApp={enterApp}
           />
         }
       />

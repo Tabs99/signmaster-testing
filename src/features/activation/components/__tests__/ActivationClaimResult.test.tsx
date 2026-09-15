@@ -23,13 +23,14 @@ describe('ActivationClaimResult', () => {
     expect(screen.getByText('Activating your access…')).toBeInTheDocument()
   })
 
-  it('shows the activated success state and finalises via Continue', async () => {
+  it('finalises via Continue then enters the app once, skipping the redundant success screen', async () => {
     const user = userEvent.setup()
+    const onContinue = vi.fn()
     const complete = vi
       .fn<() => Promise<ActivationCompletionResult>>()
       .mockResolvedValue({ kind: 'outcome', outcome: 'completed' })
 
-    renderResult({ kind: 'outcome', outcome: 'success' }, { complete })
+    renderResult({ kind: 'outcome', outcome: 'success' }, { complete, onContinue })
 
     expect(
       screen.getByText("You're in. SignMaster is activated"),
@@ -39,19 +40,26 @@ describe('ActivationClaimResult', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Your SignMaster access is active')).toBeInTheDocument()
+      expect(onContinue).toHaveBeenCalledTimes(1)
     })
+    // Finalisation runs exactly once and the user is taken into the app rather
+    // than left on a second redundant "access is active" success screen.
     expect(complete).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Opening SignMaster…')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Your SignMaster access is active'),
+    ).not.toBeInTheDocument()
   })
 
-  it('offers a retry when finalisation hits a transient error but keeps access active', async () => {
+  it('does not auto-navigate on a transient finalisation error, then navigates once after retry succeeds', async () => {
     const user = userEvent.setup()
+    const onContinue = vi.fn()
     const complete = vi
       .fn<() => Promise<ActivationCompletionResult>>()
       .mockResolvedValueOnce({ kind: 'service_unavailable' })
       .mockResolvedValueOnce({ kind: 'outcome', outcome: 'completed' })
 
-    renderResult({ kind: 'outcome', outcome: 'success' }, { complete })
+    renderResult({ kind: 'outcome', outcome: 'success' }, { complete, onContinue })
 
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
@@ -60,13 +68,13 @@ describe('ActivationClaimResult', () => {
         screen.getByText(/We couldn't finish tidying up your activation session/i),
       ).toBeInTheDocument()
     })
+    // A transient completion failure must NOT enter the app.
+    expect(onContinue).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     await waitFor(() => {
-      expect(
-        screen.queryByText(/We couldn't finish tidying up your activation session/i),
-      ).not.toBeInTheDocument()
+      expect(onContinue).toHaveBeenCalledTimes(1)
     })
     expect(complete).toHaveBeenCalledTimes(2)
   })

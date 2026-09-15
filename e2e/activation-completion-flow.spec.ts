@@ -38,7 +38,12 @@ function mockClaim(page: Page, status: string) {
   })
 }
 
-function mockComplete(page: Page, status: string, counter?: { count: number }) {
+function mockComplete(
+  page: Page,
+  status: string,
+  counter?: { count: number },
+  afterComplete?: () => void,
+) {
   return page.route('**/api/activation/complete', async (route) => {
     if (route.request().method() !== 'POST') {
       await route.continue()
@@ -51,6 +56,10 @@ function mockComplete(page: Page, status: string, counter?: { count: number }) {
 
     const authorization = route.request().headers()['authorization']
     expect(authorization).toBe('Bearer test-access-token')
+
+    // Reflect the real backend: a successful finalisation means the entitlement
+    // is now active, so a subsequent `/app` entitlement check must see ACTIVE.
+    afterComplete?.()
 
     await route.fulfill({
       status: 200,
@@ -95,12 +104,13 @@ function mockSupabaseSignUpConfirmationRequired(page: Page, email: string) {
   })
 }
 
-function mockEntitlementNone(page: Page) {
+function mockEntitlement(page: Page, getStatus: () => 'NONE' | 'ACTIVE') {
   // Sign-in authenticates then hands off to the shared `/app` resolver, which
   // reads entitlement first. A user still mid-activation resolves to NONE, so
   // the resolver routes to the resume path (`/create-account`) where the claim
   // and completion run — preserving the Task 6 completion semantics asserted
-  // here.
+  // here. Once finalisation completes the entitlement becomes ACTIVE, so the
+  // auto-navigation into `/app` lands on the active-access screen.
   return page.route('**/api/entitlement/me', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.continue()
@@ -109,13 +119,12 @@ function mockEntitlementNone(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ status: 'NONE' }),
+      body: JSON.stringify({ status: getStatus() }),
     })
   })
 }
 
 async function signInConfirmed(page: Page) {
-  await mockEntitlementNone(page)
   await page.goto('/sign-in')
   await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)
   await page.locator('#sign-in-password').fill(AUTH_TEST_PASSWORD)
@@ -127,13 +136,17 @@ test.describe('SignMaster activation completion', () => {
     await mockSupabaseAuthBootstrap(page)
   })
 
-  test('claim success then Continue finalises the activation and clears the context', async ({
+  test('claim success then Continue finalises the activation and enters the app once', async ({
     page,
   }) => {
     const completeCounter = { count: 0 }
+    const entitlement = { status: 'NONE' as 'NONE' | 'ACTIVE' }
+    await mockEntitlement(page, () => entitlement.status)
     await mockContextResolve(page, 'VALID')
     await mockClaim(page, 'SUCCESS')
-    await mockComplete(page, 'COMPLETED', completeCounter)
+    await mockComplete(page, 'COMPLETED', completeCounter, () => {
+      entitlement.status = 'ACTIVE'
+    })
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
 
     await signInConfirmed(page)
@@ -143,14 +156,25 @@ test.describe('SignMaster activation completion', () => {
 
     await page.getByRole('button', { name: 'Continue' }).click()
 
-    await expect(page.getByText('Your SignMaster access is active')).toBeVisible()
+    // Finalisation navigates straight into the app — the user is NOT parked on
+    // a second redundant "Your SignMaster access is active" success screen.
+    await expect(page).toHaveURL(/\/app$/)
+    await expect(page.getByTestId('app-access')).toBeVisible()
+    await expect(page.getByText('Your SignMaster access is active')).toHaveCount(0)
     expect(completeCounter.count).toBe(1)
   })
 
-  test('completion stays activated when the context was already finalised', async ({ page }) => {
+  test('completion stays activated and enters the app when the context was already finalised', async ({
+    page,
+  }) => {
+    const completeCounter = { count: 0 }
+    const entitlement = { status: 'NONE' as 'NONE' | 'ACTIVE' }
+    await mockEntitlement(page, () => entitlement.status)
     await mockContextResolve(page, 'VALID')
     await mockClaim(page, 'SUCCESS')
-    await mockComplete(page, 'NO_CONTEXT')
+    await mockComplete(page, 'NO_CONTEXT', completeCounter, () => {
+      entitlement.status = 'ACTIVE'
+    })
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
 
     await signInConfirmed(page)
@@ -158,10 +182,13 @@ test.describe('SignMaster activation completion', () => {
 
     await page.getByRole('button', { name: 'Continue' }).click()
 
-    await expect(page.getByText('Your SignMaster access is active')).toBeVisible()
+    await expect(page).toHaveURL(/\/app$/)
+    await expect(page.getByTestId('app-access')).toBeVisible()
+    expect(completeCounter.count).toBe(1)
   })
 
   test('conflict path offers recovery without exposing another account', async ({ page }) => {
+    await mockEntitlement(page, () => 'NONE')
     await mockContextResolve(page, 'VALID')
     await mockClaim(page, 'ALREADY_CLAIMED')
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
@@ -176,6 +203,7 @@ test.describe('SignMaster activation completion', () => {
   })
 
   test('not eligible path shows safe copy with no internal reason', async ({ page }) => {
+    await mockEntitlement(page, () => 'NONE')
     await mockContextResolve(page, 'VALID')
     await mockClaim(page, 'NOT_ELIGIBLE')
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
