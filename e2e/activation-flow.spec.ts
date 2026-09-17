@@ -13,8 +13,13 @@ async function fillNotShippedFixtureOrderId(page: Page) {
   await page.getByLabel('Amazon order number').fill(NOT_SHIPPED_FIXTURE_DIGITS)
 }
 
-async function submitOrderCheck(page: Page) {
-  await page.getByRole('button', { name: 'Check my order' }).click()
+// Verification now starts automatically once a complete, valid Order ID is
+// present (see fillValidOrderId / fillNotShippedFixtureOrderId). The manual
+// "Check my order" button remains as an accessibility fallback and is covered
+// by the ActivationStep1 unit tests; these E2E flows rely on auto-verification,
+// which avoids racing the button as it is replaced by the checking state.
+async function submitOrderCheck(_page: Page) {
+  // Intentionally a no-op: a complete valid Order ID auto-verifies.
 }
 
 async function expectApprovedCheckingButton(page: Page) {
@@ -139,9 +144,9 @@ test.describe('SignMaster activation verification', () => {
     })
 
     await fillValidOrderId(page)
-    const submit = page.getByRole('button', { name: 'Check my order' })
-    await submit.click()
+    // Auto-verification starts once the complete valid Order ID is present.
     await expect(page.getByRole('button', { name: 'Checking your order…' })).toBeVisible()
+    // Re-triggering while a verification is in flight must not duplicate it.
     await page.getByRole('button', { name: 'Checking your order…' }).click({ force: true })
 
     await page.waitForResponse('**/api/activation/verify')

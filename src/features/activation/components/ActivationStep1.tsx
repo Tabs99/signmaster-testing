@@ -15,6 +15,13 @@ import {
   type ActivationUiPhase,
 } from '../types/activationResult'
 import { isValidOrderId } from '../utils/validation'
+
+/**
+ * Trailing debounce before auto-verifying a complete, structurally valid Order
+ * ID. Short enough to feel instant, long enough to coalesce fast typing/paste
+ * into a single verification.
+ */
+const AUTO_VERIFY_DEBOUNCE_MS = 300
 import ActivationShell from './ActivationShell'
 import ActivationStatusPlate from './ActivationStatusPlate'
 import BrandLockup from './BrandLockup'
@@ -36,6 +43,10 @@ export default function ActivationStep1({
   const helpReturnFocusRef = useRef<HTMLElement | null>(null)
   const verifyInFlightRef = useRef(false)
   const contextCreateInFlightRef = useRef(false)
+  // The last normalized Order ID for which a verification was *started* (manual
+  // or automatic). Lets auto-verification skip a value that has already been
+  // requested, so the same unchanged Order ID is never verified twice.
+  const lastRequestedOrderIdRef = useRef<string | null>(null)
 
   const [orderId, setOrderId] = useState('')
   const [fieldTouched, setFieldTouched] = useState(false)
@@ -94,6 +105,7 @@ export default function ActivationStep1({
       }
 
       verifyInFlightRef.current = true
+      lastRequestedOrderIdRef.current = orderIdToVerify
       setPhase('checking')
 
       try {
@@ -105,6 +117,36 @@ export default function ActivationStep1({
     },
     [verifyOrder],
   )
+
+  // Auto-verify once a complete, structurally valid Order ID has settled. The
+  // frontend never verifies incomplete/malformed input, never verifies on every
+  // keystroke (trailing debounce), and never re-verifies the same normalized
+  // value (dedupe latch). Entering the `checking` phase re-runs this effect and
+  // its cleanup cancels any pending timer, so a manual submit cannot race a
+  // queued auto-verification into a duplicate request.
+  useEffect(() => {
+    if (orderId === '') {
+      // A deliberate clear (e.g. "Use another order") resets the latch so a
+      // fresh, intentional re-entry can verify again.
+      lastRequestedOrderIdRef.current = null
+      return
+    }
+
+    if (
+      phase !== 'entry' ||
+      !orderIdValid ||
+      verifyInFlightRef.current ||
+      orderId === lastRequestedOrderIdRef.current
+    ) {
+      return
+    }
+
+    const timeoutId = globalThis.setTimeout(() => {
+      void runVerification(orderId)
+    }, AUTO_VERIFY_DEBOUNCE_MS)
+
+    return () => globalThis.clearTimeout(timeoutId)
+  }, [orderId, orderIdValid, phase, runVerification])
 
   async function applyVerificationResult(result: ActivationVerifyResult) {
     if (result.kind === 'invalid_order_id') {

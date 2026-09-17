@@ -51,8 +51,8 @@ function mockActivationContextRoutes(
 
 async function reachEligibleResult(page: Page) {
   await page.goto('/activate')
+  // A complete valid Order ID auto-verifies after a short debounce.
   await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
-  await page.getByRole('button', { name: 'Check my order' }).click()
   await expect(
     page.getByRole('heading', { name: 'Your purchase is verified' }),
   ).toBeVisible()

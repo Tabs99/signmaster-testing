@@ -1357,4 +1357,203 @@ describe('ActivationStep1', () => {
       })
     })
   })
+
+  describe('smart auto-verification (Checkpoint 2)', () => {
+    const AUTO_VERIFY_DEBOUNCE_MS = 300
+    const OTHER_VALID_ORDER_ID = '111-1111111-1111111'
+    const OTHER_VALID_ORDER_ID_DIGITS = '11111111111111111'
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function setOrderIdValue(value: string) {
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.change(field, { target: { value } })
+      return field
+    }
+
+    async function advanceDebounce(extraMs = 0) {
+      await act(async () => {
+        vi.advanceTimersByTime(AUTO_VERIFY_DEBOUNCE_MS + extraMs)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+    }
+
+    it('does not auto-verify an incomplete Order ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue('205-1234567-123')
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify a malformed Order ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      // 16 digits — structurally invalid (a complete Order ID has 17).
+      setOrderIdValue('2051234567123456')
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('auto-verifies exactly once after a complete valid Order ID is typed', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      // Nothing before the debounce elapses.
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('auto-verifies once for a pasted Order ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? 'Order # 205-1234567-1234567' : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('normalizes surrounding text, spaces and dashes then auto-verifies the canonical value', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = setOrderIdValue('  Order # 205 1234567 1234567  ')
+      expect(field).toHaveValue(VALID_ORDER_ID)
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('collapses repeated identical input events into a single verification', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      // Digits then the already-canonical value: mirrors autofill/mobile input
+      // that re-fires change events for the same normalized Order ID.
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      setOrderIdValue(VALID_ORDER_ID)
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not repeatedly verify the same unchanged Order ID over time', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // Well beyond the debounce window: no auto re-verification of the same value.
+      await advanceDebounce(5_000)
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('auto-verifies again when the Order ID is changed to a different valid value', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'business_status', status: 'NOT_FOUND' })
+        .mockResolvedValueOnce({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // NOT_FOUND returns to the entry field with the value preserved.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check the number' }))
+        await Promise.resolve()
+      })
+
+      setOrderIdValue(OTHER_VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(2)
+      expect(verifyOrder).toHaveBeenLastCalledWith(OTHER_VALID_ORDER_ID)
+    })
+
+    it('does not duplicate a pending auto-verification when the manual button is used', async () => {
+      vi.useFakeTimers()
+      const { verifyOrder, resolveVerify } = createPendingVerifyMock()
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+
+      // Manual submit before the debounce elapses.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check my order' }))
+        await Promise.resolve()
+      })
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // The previously-armed auto-verify timer must have been cancelled.
+      await advanceDebounce(500)
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
+      await act(async () => {
+        await Promise.resolve()
+      })
+    })
+
+    it('does not auto-retry a transient failure but allows a manual retry', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'service_unavailable' })
+        .mockResolvedValueOnce({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // No self-driven retry, even long after the failure.
+      await advanceDebounce(5_000)
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+        await Promise.resolve()
+      })
+      expect(verifyOrder).toHaveBeenCalledTimes(2)
+    })
+  })
 })

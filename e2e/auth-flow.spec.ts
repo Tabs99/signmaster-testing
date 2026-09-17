@@ -103,8 +103,11 @@ async function fillValidOrderId(page: Page) {
   await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
 }
 
-async function submitOrderCheck(page: Page) {
-  await page.getByRole('button', { name: 'Check my order' }).click()
+// A complete, valid Order ID now auto-verifies after a short debounce, so the
+// manual "Check my order" button (kept as an accessibility fallback, covered by
+// unit tests) does not need to be clicked here.
+async function submitOrderCheck(_page: Page) {
+  // Intentionally a no-op: a complete valid Order ID auto-verifies.
 }
 
 test.describe('SignMaster auth foundation', () => {
