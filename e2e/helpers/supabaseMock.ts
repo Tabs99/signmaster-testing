@@ -30,15 +30,101 @@ export async function mockSupabaseSignUpSuccess(page: Page, email: string) {
   })
 }
 
+/** Sign-up succeeds in Supabase but requires email confirmation (no session). */
+export async function mockSupabaseSignUpConfirmationRequired(page: Page, email: string) {
+  await page.route('**/auth/v1/signup**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user: {
+          id: '00000000-0000-4000-8000-000000000003',
+          email,
+          email_confirmed_at: null,
+        },
+      }),
+    })
+  })
+}
+
+export async function mockSupabaseSignUpEmailAlreadyRegistered(page: Page) {
+  await page.route('**/auth/v1/signup**', async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 422,
+        error_code: 'user_already_exists',
+        msg: 'User already registered',
+      }),
+    })
+  })
+}
+
+/**
+ * After Supabase persists a session to localStorage, the next read of the auth
+ * token returns null once — simulates post-signup session reconciliation failure
+ * (auth-sync retry path) without calling signUp again on Retry.
+ */
+export async function mockSupabasePostSignupSessionReadFailureOnce(page: Page) {
+  await page.addInitScript(() => {
+    const originalSetItem = Storage.prototype.setItem
+    const originalGetItem = Storage.prototype.getItem
+
+    Storage.prototype.setItem = function setItem(
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      originalSetItem.call(this, key, value)
+      if (key.includes('auth-token')) {
+        ;(window as unknown as { __failNextAuthSessionGet?: boolean }).__failNextAuthSessionGet =
+          true
+      }
+    }
+
+    Storage.prototype.getItem = function getItem(this: Storage, key: string) {
+      const failFlag = (window as unknown as { __failNextAuthSessionGet?: boolean })
+        .__failNextAuthSessionGet
+      if (failFlag && key.includes('auth-token')) {
+        ;(window as unknown as { __failNextAuthSessionGet?: boolean }).__failNextAuthSessionGet =
+          false
+        return null
+      }
+      return originalGetItem.call(this, key)
+    }
+  })
+}
+
 /**
  * Seeds a confirmed Supabase session into localStorage so the app boots
  * authenticated — mirroring the recovery session Supabase establishes from a
  * password-recovery link (detectSessionInUrl). The far-future `expires_at`
  * keeps supabase-js from attempting a network refresh.
  */
+function confirmedSessionPayload(email: string) {
+  return {
+    access_token: 'test-access-token',
+    token_type: 'bearer',
+    expires_in: 3600,
+    expires_at: 9999999999,
+    refresh_token: 'test-refresh-token',
+    user: {
+      id: '00000000-0000-4000-8000-000000000010',
+      aud: 'authenticated',
+      role: 'authenticated',
+      email,
+      email_confirmed_at: '2026-01-01T00:00:00.000Z',
+      app_metadata: {},
+      user_metadata: {},
+      created_at: '2026-01-01T00:00:00.000Z',
+    },
+  }
+}
+
 export async function seedConfirmedSession(page: Page, email: string) {
   await page.addInitScript(
-    ({ email }) => {
+    ({ email: seededEmail }) => {
       const session = {
         access_token: 'test-access-token',
         token_type: 'bearer',
@@ -49,7 +135,7 @@ export async function seedConfirmedSession(page: Page, email: string) {
           id: '00000000-0000-4000-8000-000000000010',
           aud: 'authenticated',
           role: 'authenticated',
-          email,
+          email: seededEmail,
           email_confirmed_at: '2026-01-01T00:00:00.000Z',
           app_metadata: {},
           user_metadata: {},
@@ -59,6 +145,16 @@ export async function seedConfirmedSession(page: Page, email: string) {
       window.localStorage.setItem('sb-127-auth-token', JSON.stringify(session))
     },
     { email },
+  )
+}
+
+/** Sets a confirmed Supabase session on the current page (post-navigation). */
+export async function setConfirmedSessionStorage(page: Page, email: string) {
+  await page.evaluate(
+    ({ session }) => {
+      window.localStorage.setItem('sb-127-auth-token', JSON.stringify(session))
+    },
+    { session: confirmedSessionPayload(email) },
   )
 }
 

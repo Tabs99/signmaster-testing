@@ -62,3 +62,9 @@ export async function expectProgressiveAccountSetupOnActivate(page: Page) {
   ).toBeVisible()
   await expect(page.getByLabel('Email Address')).toBeVisible()
 }
+
+export async function reachProgressiveAccountSetup(page: Page) {
+  await page.goto('/activate')
+  await page.getByLabel('Amazon order number').fill('205-1234567-1234567')
+  await expectProgressiveAccountSetupOnActivate(page)
+}
