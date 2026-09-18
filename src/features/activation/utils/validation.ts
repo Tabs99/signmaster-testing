@@ -10,6 +10,11 @@ export function countOrderIdDigits(value: string): number {
   return value.replace(/\D/g, '').length
 }
 
+/** True when the raw input (before display truncation) contains exactly 17 digits. */
+export function isExactSeventeenDigitSource(raw: string): boolean {
+  return countOrderIdDigits(raw) === 17
+}
+
 export function isValidOrderId(value: string): boolean {
   return ORDER_ID_PATTERN.test(value.trim())
 }

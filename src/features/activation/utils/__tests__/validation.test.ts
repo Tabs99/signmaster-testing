@@ -7,6 +7,7 @@ import {
 } from '../formatting'
 import {
   countOrderIdDigits,
+  isExactSeventeenDigitSource,
   isValidOrderId,
   validateOrderId,
   VALIDATION_MESSAGES,
@@ -36,6 +37,19 @@ describe('validation', () => {
     it('counts digits regardless of hyphens', () => {
       expect(countOrderIdDigits('205-1234567-1')).toBe(11)
       expect(countOrderIdDigits('205-1234567-1234567')).toBe(17)
+    })
+  })
+
+  describe('isExactSeventeenDigitSource', () => {
+    it('is true only when the raw source contains exactly 17 digits', () => {
+      expect(isExactSeventeenDigitSource('205-1234567-1234567')).toBe(true)
+      expect(isExactSeventeenDigitSource('Order # 205-1234567-1234567')).toBe(true)
+      expect(isExactSeventeenDigitSource('20512345671234567')).toBe(true)
+      expect(isExactSeventeenDigitSource('2051234567123456')).toBe(false)
+      expect(isExactSeventeenDigitSource('205123456712345678')).toBe(false)
+      expect(isExactSeventeenDigitSource('Order # 205-1234567-1234567 ref 99')).toBe(
+        false,
+      )
     })
   })
 })

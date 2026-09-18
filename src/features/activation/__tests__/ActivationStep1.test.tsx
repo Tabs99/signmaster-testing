@@ -1555,5 +1555,177 @@ describe('ActivationStep1', () => {
       })
       expect(verifyOrder).toHaveBeenCalledTimes(2)
     })
+
+    it('auto-verifies a canonical dashed Order ID entered via change', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID)
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('does not auto-verify when pasted free-form text contains extra digits', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `Order # ${VALID_ORDER_ID} ref 99` : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify 18 bare digits even when the field displays 17', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify when extra digits follow a valid ID separated by spaces', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(`${VALID_ORDER_ID} 55`)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify when extra digits follow a valid ID separated by text', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(`Order ${VALID_ORDER_ID} ref 99`)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('auto-verifies after correcting an overlong source to exactly 17 digits', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      fireEvent.change(field, { target: { value: VALID_ORDER_ID_DIGITS } })
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('auto-verifies after clearing an overlong paste and re-entering a valid ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `Order # ${VALID_ORDER_ID} ref 99` : '',
+        },
+      })
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      fireEvent.change(field, { target: { value: '' } })
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('does not duplicate verification while a request is in flight', async () => {
+      vi.useFakeTimers()
+      const { verifyOrder, resolveVerify } = createPendingVerifyMock()
+      render(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      const form = screen.getByTestId('activation-entry-form')
+      await act(async () => {
+        fireEvent.submit(form)
+        await Promise.resolve()
+      })
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
+      await act(async () => {
+        await Promise.resolve()
+      })
+    })
+
+    it('still creates activation context after auto-verified eligible result', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
+      const onContinueToAccount = vi.fn()
+      render(
+        <ActivationStep1
+          verifyOrder={verifyOrder}
+          createContext={createContext}
+          onContinueToAccount={onContinueToAccount}
+        />,
+      )
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('heading', { name: 'Your purchase is verified' }),
+        ).toBeInTheDocument()
+      })
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Continue to account setup' }),
+        )
+        await Promise.resolve()
+      })
+
+      expect(createContext).toHaveBeenCalledWith(VALID_ORDER_ID)
+      expect(onContinueToAccount).toHaveBeenCalledTimes(1)
+    })
   })
 })

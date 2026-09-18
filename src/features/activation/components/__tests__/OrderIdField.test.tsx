@@ -240,6 +240,52 @@ describe('OrderIdField', () => {
       expect(field).toHaveValue(FORMATTED_ORDER_ID)
     })
 
+    it('reports auto-verify ineligibility when paste source has more than 17 digits', () => {
+      const onChange = vi.fn()
+      render(
+        <OrderIdField
+          value=""
+          onChange={onChange}
+          onOpenHelp={vi.fn()}
+          showError={false}
+        />,
+      )
+      const field = screen.getByLabelText('Amazon order number')
+
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: () => `Order # ${FORMATTED_ORDER_ID} ref 99`,
+        },
+      })
+
+      expect(onChange).toHaveBeenLastCalledWith(FORMATTED_ORDER_ID, {
+        autoVerifyEligible: false,
+      })
+    })
+
+    it('reports auto-verify eligibility for a clean 17-digit paste source', () => {
+      const onChange = vi.fn()
+      render(
+        <OrderIdField
+          value=""
+          onChange={onChange}
+          onOpenHelp={vi.fn()}
+          showError={false}
+        />,
+      )
+      const field = screen.getByLabelText('Amazon order number')
+
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: () => `Order # ${FORMATTED_ORDER_ID}`,
+        },
+      })
+
+      expect(onChange).toHaveBeenLastCalledWith(FORMATTED_ORDER_ID, {
+        autoVerifyEligible: true,
+      })
+    })
+
     it('ignores repeated key input once the 17-digit limit is reached', () => {
       const field = renderOrderIdField(FORMATTED_ORDER_ID)
 

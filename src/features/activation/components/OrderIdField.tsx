@@ -1,5 +1,10 @@
 import { useId, useRef, type KeyboardEvent } from 'react'
-import { countOrderIdDigits, isValidOrderId, validateOrderId } from '../utils/validation'
+import {
+  countOrderIdDigits,
+  isExactSeventeenDigitSource,
+  isValidOrderId,
+  validateOrderId,
+} from '../utils/validation'
 import {
   countDigitsBeforeIndex,
   cursorPositionAfterDigits,
@@ -9,9 +14,13 @@ import {
 } from '../utils/formatting'
 import FieldError from './FieldError'
 
+export type OrderIdFieldChangeMeta = {
+  autoVerifyEligible: boolean
+}
+
 interface OrderIdFieldProps {
   value: string
-  onChange: (value: string) => void
+  onChange: (value: string, meta: OrderIdFieldChangeMeta) => void
   onOpenHelp: () => void
   showError: boolean
   disabled?: boolean
@@ -65,7 +74,9 @@ export default function OrderIdField({
     }
 
     valueRef.current = nextValue
-    onChange(nextValue)
+    onChange(nextValue, {
+      autoVerifyEligible: isExactSeventeenDigitSource(nextValue),
+    })
 
     const insertedDigitIndex = countDigitsBeforeIndex(currentValue, selectionStart) + 1
     const nextCaret = cursorPositionAfterDigits(nextValue, insertedDigitIndex)
@@ -107,12 +118,19 @@ export default function OrderIdField({
         aria-disabled={disabled}
         aria-invalid={showError && Boolean(errorMessage)}
         aria-describedby={[errorMessage ? errorId : null, hintId].filter(Boolean).join(' ') || undefined}
-        onChange={(event) => onChange(formatOrderId(event.target.value))}
+        onChange={(event) => {
+          const raw = event.target.value
+          onChange(formatOrderId(raw), {
+            autoVerifyEligible: isExactSeventeenDigitSource(raw),
+          })
+        }}
         onKeyDown={handleKeyDown}
         onPaste={(event) => {
           event.preventDefault()
           const pasted = event.clipboardData.getData('text')
-          onChange(normalisePastedOrderId(pasted))
+          onChange(normalisePastedOrderId(pasted), {
+            autoVerifyEligible: isExactSeventeenDigitSource(pasted),
+          })
         }}
         onBlur={onBlur}
         className={`keyline-field keyline-focus w-full ${

@@ -49,6 +49,7 @@ export default function ActivationStep1({
   const lastRequestedOrderIdRef = useRef<string | null>(null)
 
   const [orderId, setOrderId] = useState('')
+  const [autoVerifyEligible, setAutoVerifyEligible] = useState(false)
   const [fieldTouched, setFieldTouched] = useState(false)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [phase, setPhase] = useState<ActivationUiPhase>('entry')
@@ -135,6 +136,7 @@ export default function ActivationStep1({
     if (
       phase !== 'entry' ||
       !orderIdValid ||
+      !autoVerifyEligible ||
       verifyInFlightRef.current ||
       orderId === lastRequestedOrderIdRef.current
     ) {
@@ -146,7 +148,7 @@ export default function ActivationStep1({
     }, AUTO_VERIFY_DEBOUNCE_MS)
 
     return () => globalThis.clearTimeout(timeoutId)
-  }, [orderId, orderIdValid, phase, runVerification])
+  }, [orderId, orderIdValid, autoVerifyEligible, phase, runVerification])
 
   async function applyVerificationResult(result: ActivationVerifyResult) {
     if (result.kind === 'invalid_order_id') {
@@ -199,6 +201,7 @@ export default function ActivationStep1({
   function returnToEntry(options?: { clearOrderId?: boolean; focusField?: boolean }) {
     if (options?.clearOrderId) {
       setOrderId('')
+      setAutoVerifyEligible(false)
     }
     setPhase('entry')
     setResultKind(null)
@@ -396,7 +399,10 @@ export default function ActivationStep1({
             >
               <OrderIdField
                 value={orderId}
-                onChange={setOrderId}
+                onChange={(value, meta) => {
+                  setOrderId(value)
+                  setAutoVerifyEligible(meta.autoVerifyEligible)
+                }}
                 onOpenHelp={() =>
                   openHelp(0, showMeWhereRef.current, 'Finding your Amazon order number')
                 }
