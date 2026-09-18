@@ -982,19 +982,21 @@ Frontend validation improves user experience. All security and business validati
 
 ### Activation endpoint security
 
-Both `POST /api/activation/verify` and `POST /api/activation/claim` must implement:
+Before **production release**, both `POST /api/activation/verify` and `POST /api/activation/claim` must implement:
 
-| Control | Requirement |
-|---------|-------------|
+| Control | Production requirement |
+|---------|------------------------|
 | Server-side validation | Authoritative format and business-rule checks on every request |
 | Rate limiting | Limit repeated attempts per IP and/or per order ID to prevent abuse |
 | Attempt limiting | Cap failed verification/claim attempts within a time window |
 | Request size limits | Reject oversized or malformed request bodies |
 | Safe logging | Log request outcomes for monitoring; never log credentials, tokens, or unnecessary Amazon order detail |
 
-`/verify` is a pre-auth endpoint and is especially exposed to abuse — rate limiting is mandatory.
+`/verify` is a pre-auth endpoint and is especially exposed to abuse — **server-side rate limiting and attempt caps are mandatory before production release** (see also `PRE_PRODUCTION_CHECKLIST.md`).
 
-`/claim` requires authentication (see Claim endpoint security rules) in addition to the controls above.
+**Current implementation / checkpoint status (CP1–CP9):** Server-side validation and eligibility checks exist on `/verify` and `/claim` today. **Server-side rate limiting, failed-attempt caps, and request-size hardening for the pre-auth `/verify` endpoint are not implemented yet**; they are intentionally deferred to **CP10 production hardening** and are **not** part of the CP1–CP9 acceptance gate. Manual acceptance scenario PV-14 in [`docs/manual-auth-activation-acceptance.md`](./docs/manual-auth-activation-acceptance.md) records this deferral.
+
+`/claim` requires authentication (see Claim endpoint security rules) in addition to the production controls above.
 
 ---
 
