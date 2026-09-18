@@ -14,6 +14,8 @@ import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import { authService } from '../../../lib/auth/authService'
+import { useGoogleSignIn } from '../hooks/useGoogleSignIn'
+import SocialAuthOptions from './SocialAuthOptions'
 import { buildConfirmationContinuationRedirect } from '../../../lib/activation/confirmationRedirect'
 import { resolveActivationResumeState } from '../../../lib/activation/activationResumeResolver'
 import { useAuthContext } from '../../auth/context/AuthProvider'
@@ -142,6 +144,7 @@ export default function ActivationAccountSetup({
   variant = 'page',
   activationContextResolution,
   signUp = authService.signUp.bind(authService),
+  signInWithGoogle = authService.signInWithGoogle.bind(authService),
   buildConfirmationRedirect = buildConfirmationContinuationRedirect,
   onSignIn,
   onRestartActivation,
@@ -403,6 +406,12 @@ export default function ActivationAccountSetup({
 
   const isLoading = formStatus === 'loading'
   const contextResolutionBlocked = contextLoading || contextError
+  const googleSignInEnabled =
+    !contextResolutionBlocked && contextAllowsAccountCreation && formStatus === 'idle' && !isLoading
+  const { handleGoogleSignIn, googleLoading, googleError } = useGoogleSignIn({
+    signInWithGoogle,
+    enabled: googleSignInEnabled,
+  })
   const canSubmit =
     emailOk &&
     passwordOk &&
@@ -815,6 +824,15 @@ export default function ActivationAccountSetup({
                 'Create Account & Continue'
               )}
             </PrimaryButton>
+
+            <SocialAuthOptions
+              onGoogleClick={() => {
+                void handleGoogleSignIn()
+              }}
+              loading={googleLoading}
+              disabled={!googleSignInEnabled}
+              error={googleError}
+            />
 
             <p className="mt-1 text-center text-sm leading-relaxed text-white/[0.62]">
               Already have a SignMaster account?{' '}

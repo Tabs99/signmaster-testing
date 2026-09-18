@@ -280,6 +280,105 @@ export async function mockSupabaseSignOut(page: Page) {
   })
 }
 
+/**
+ * Intercepts Supabase OAuth authorize requests and simulates a return to the app
+ * with a confirmed session (no real Google traffic).
+ */
+/**
+ * Implicit-grant style OAuth return hash. Matches this app's Supabase client:
+ * `detectSessionInUrl: true` with default `flowType: 'implicit'` (see
+ * `@supabase/supabase-js` DEFAULT_AUTH_OPTIONS). If the browser client is ever
+ * switched to PKCE, this helper must simulate `?code=` exchange instead.
+ */
+function buildOAuthReturnHash(email: string): string {
+  const accessToken = `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url({
+    sub: RECOVERY_USER_ID,
+    email,
+    aud: 'authenticated',
+    role: 'authenticated',
+    exp: 9999999999,
+  })}.signature`
+
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    refresh_token: 'test-oauth-refresh-token',
+    expires_in: '3600',
+    token_type: 'bearer',
+  })
+
+  return `#${params.toString()}`
+}
+
+export async function mockGoogleOAuthAuthorizeReturn(
+  page: Page,
+  email: string,
+  options: { fail?: boolean; onAuthorize?: (redirectTo: string) => void } = {},
+) {
+  await page.route('**/auth/v1/authorize**', async (route) => {
+    if (options.fail) {
+      const requestUrl = new URL(route.request().url())
+      const redirectTo = requestUrl.searchParams.get('redirect_to') ?? '/activate'
+
+      if (route.request().resourceType() === 'document') {
+        await route.fulfill({
+          status: 302,
+          headers: { Location: redirectTo },
+        })
+        return
+      }
+
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'server_error',
+          error_description: 'OAuth provider unavailable',
+        }),
+      })
+      return
+    }
+
+    const requestUrl = new URL(route.request().url())
+    const redirectTo = requestUrl.searchParams.get('redirect_to') ?? '/sign-in'
+    options.onAuthorize?.(redirectTo)
+
+    const returnUrl = `${redirectTo}${buildOAuthReturnHash(email)}`
+
+    // supabase-js may either fetch this endpoint or navigate to it directly.
+    if (route.request().resourceType() === 'document') {
+      await route.fulfill({
+        status: 302,
+        headers: { Location: returnUrl },
+      })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ url: returnUrl }),
+    })
+  })
+}
+
+export async function mockSupabaseAuthenticatedUser(page: Page, email: string) {
+  await page.route('**/auth/v1/user**', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: '00000000-0000-4000-8000-000000000020',
+        email,
+        email_confirmed_at: '2026-01-01T00:00:00.000Z',
+      }),
+    })
+  })
+}
+
 export async function mockSupabaseSignInSuccess(page: Page, email: string) {
   await page.route('**/auth/v1/token**', async (route) => {
     if (route.request().method() !== 'POST') {

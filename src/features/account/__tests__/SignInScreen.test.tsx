@@ -32,6 +32,79 @@ describe('SignInScreen', () => {
     })
   })
 
+  it('shows Continue with Google alongside email/password sign-in', async () => {
+    render(<SignInScreen />)
+
+    expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+    expect(screen.getByLabelText('Password')).toBeInTheDocument()
+  })
+
+  it('invokes Google auth when Continue with Google is clicked', async () => {
+    const user = userEvent.setup()
+    const signInWithGoogle = vi.fn().mockResolvedValue({ kind: 'redirect_initiated' })
+
+    render(<SignInScreen signInWithGoogle={signInWithGoogle} />)
+
+    await user.click(screen.getByRole('button', { name: 'Continue with Google' }))
+
+    await waitFor(() => {
+      expect(signInWithGoogle).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('routes OAuth return through onEnterApp when already authenticated', async () => {
+    const onEnterApp = vi.fn()
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: true,
+      user: { id: '1', email: 'google@example.invalid', emailConfirmed: true },
+      signOut: vi.fn(),
+    })
+
+    render(<SignInScreen onEnterApp={onEnterApp} />)
+
+    await waitFor(() => {
+      expect(onEnterApp).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('invokes onEnterApp only once across parent rerenders after OAuth return', async () => {
+    const onEnterApp = vi.fn()
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: true,
+      user: { id: '1', email: 'google@example.invalid', emailConfirmed: true },
+      signOut: vi.fn(),
+    })
+
+    const view = render(<SignInScreen onEnterApp={onEnterApp} />)
+    view.rerender(<SignInScreen onEnterApp={onEnterApp} />)
+    view.rerender(<SignInScreen onEnterApp={onEnterApp} />)
+
+    await waitFor(() => {
+      expect(onEnterApp).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('shows safe retryable UI when Google OAuth initiation fails on sign-in', async () => {
+    const user = userEvent.setup()
+    const signInWithGoogle = vi.fn().mockResolvedValue({
+      kind: 'error',
+      error: { code: 'unknown', message: 'We could not start Google sign-in.' },
+    })
+
+    render(<SignInScreen signInWithGoogle={signInWithGoogle} />)
+
+    await user.click(screen.getByRole('button', { name: 'Continue with Google' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/Google sign-in/i)
+    })
+    expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled()
+  })
+
   it('renders email, password, and sign-in CTA', async () => {
     render(<SignInScreen />)
 
@@ -161,21 +234,25 @@ describe('SignInScreen', () => {
     const user = userEvent.setup()
     const onEnterApp = vi.fn()
     const signIn = vi.fn().mockResolvedValue(successResult)
+    let isAuthenticated = false
 
-    // Auth context already reflects an authenticated session, so the hand-off
-    // to the shared post-auth resolver fires without a manual Continue click.
-    mockUseAuthContext.mockReturnValue({
+    mockUseAuthContext.mockImplementation(() => ({
       isInitializing: false,
-      isAuthenticated: true,
-      user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+      isAuthenticated,
+      user: isAuthenticated
+        ? { id: '1', email: 'alex@example.invalid', emailConfirmed: true }
+        : null,
       signOut: vi.fn(),
-    })
+    }))
 
-    render(<SignInScreen signIn={signIn} onEnterApp={onEnterApp} />)
+    const view = render(<SignInScreen signIn={signIn} onEnterApp={onEnterApp} />)
 
     await user.type(screen.getByLabelText('Email Address'), 'alex@example.invalid')
     await user.type(screen.getByLabelText('Password'), 'Secure123!')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    isAuthenticated = true
+    view.rerender(<SignInScreen signIn={signIn} onEnterApp={onEnterApp} />)
 
     await waitFor(() => {
       expect(onEnterApp).toHaveBeenCalledOnce()

@@ -30,6 +30,11 @@ export type SignInResult =
   | { kind: 'success'; user: AuthUser; session: AuthSessionInfo }
   | { kind: 'error'; error: SafeAuthError }
 
+/** Supabase OAuth redirect flow — browser navigates away on success. */
+export type GoogleSignInResult =
+  | { kind: 'redirect_initiated' }
+  | { kind: 'error'; error: SafeAuthError }
+
 /**
  * Result of requesting a password-reset email. Account existence is never
  * revealed: a missing account and a successful dispatch both collapse to
@@ -77,4 +82,6 @@ export const AUTH_MESSAGES = {
   passwordUpdateTemporaryFailure:
     'We could not update your password right now. Please try again in a moment.',
   passwordUpdateWeak: 'Choose a password that meets the requirements below.',
+  oauthInitiationFailed:
+    'We could not start Google sign-in. Please try again or use email and password.',
 } as const

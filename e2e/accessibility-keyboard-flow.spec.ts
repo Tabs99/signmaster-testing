@@ -41,6 +41,14 @@ function mockContext(page: Page, status: 'VALID' | 'NONE') {
 }
 
 test.describe('SignMaster keyboard accessibility', () => {
+  test('Continue with Google is keyboard reachable on sign-in', async ({ page }) => {
+    await mockSupabaseAuthBootstrap(page)
+
+    await page.goto('/sign-in')
+    await page.getByRole('button', { name: 'Continue with Google' }).focus()
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeFocused()
+  })
+
   test('sign-in is completable with the keyboard only and routes to /app', async ({ page }) => {
     await mockSupabaseSignInSuccess(page, EMAIL)
     await mockEntitlement(page, 'ACTIVE')

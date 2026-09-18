@@ -6,14 +6,20 @@ import {
   mapSignUpError,
 } from './authErrors'
 import { getBrowserSupabaseClient } from '../supabase/client'
+import { buildOAuthReturnUrl } from './oauthRedirect'
 import type {
   AuthSessionInfo,
   AuthUser,
+  GoogleSignInResult,
   PasswordResetRequestResult,
   PasswordUpdateResult,
   SignInResult,
   SignUpResult,
 } from './types'
+
+export interface GoogleSignInOptions {
+  redirectTo?: string
+}
 
 export interface SignUpOptions {
   /**
@@ -40,6 +46,7 @@ export interface AuthService {
     options?: SignUpOptions,
   ): Promise<SignUpResult>
   signIn(email: string, password: string): Promise<SignInResult>
+  signInWithGoogle(options?: GoogleSignInOptions): Promise<GoogleSignInResult>
   requestPasswordReset(
     email: string,
     options?: RequestPasswordResetOptions,
@@ -126,6 +133,31 @@ export function createAuthService(
         return {
           kind: 'error',
           error: mapSignUpError(error),
+        }
+      }
+    },
+
+    async signInWithGoogle(options) {
+      try {
+        const client = deps.getClient()
+        const redirectTo = options?.redirectTo ?? buildOAuthReturnUrl()
+        const { error } = await client.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo },
+        })
+
+        if (error) {
+          return {
+            kind: 'error',
+            error: mapAuthError(error),
+          }
+        }
+
+        return { kind: 'redirect_initiated' }
+      } catch (error) {
+        return {
+          kind: 'error',
+          error: mapAuthError(error),
         }
       }
     },

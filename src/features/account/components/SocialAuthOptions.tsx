@@ -1,0 +1,60 @@
+import LoadingSpinner from '../../activation/components/LoadingSpinner'
+
+export interface SocialAuthOptionsProps {
+  onGoogleClick: () => void
+  loading?: boolean
+  disabled?: boolean
+  error?: string | null
+}
+
+export default function SocialAuthOptions({
+  onGoogleClick,
+  loading = false,
+  disabled = false,
+  error = null,
+}: SocialAuthOptionsProps) {
+  const isInteractive = !loading && !disabled
+
+  return (
+    <div className="flex flex-col gap-[18px]" data-testid="social-auth-options">
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <span className="h-px flex-1 bg-white/15" />
+        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-white/45">
+          or
+        </span>
+        <span className="h-px flex-1 bg-white/15" />
+      </div>
+
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-[10px] border border-amber-500/30 bg-amber-500/10 px-4 py-3.5 text-[13px] font-medium leading-snug text-amber-300"
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onGoogleClick}
+        disabled={!isInteractive}
+        aria-disabled={!isInteractive}
+        aria-busy={loading || undefined}
+        className={`keyline-focus flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-white/[0.06] px-4 py-3.5 text-[15px] font-bold text-white transition-colors ${
+          isInteractive
+            ? 'hover:border-white/30 hover:bg-white/[0.09]'
+            : 'cursor-not-allowed opacity-60'
+        } ${loading ? 'cursor-wait' : ''}`}
+      >
+        {loading ? (
+          <>
+            <LoadingSpinner />
+            <span>Connecting to Google…</span>
+          </>
+        ) : (
+          'Continue with Google'
+        )}
+      </button>
+    </div>
+  )
+}

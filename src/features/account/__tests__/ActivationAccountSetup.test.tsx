@@ -1026,4 +1026,202 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       expect(screen.queryByText(/SignMaster is activated/i)).not.toBeInTheDocument()
     })
   })
+
+  describe('Google OAuth (CP5)', () => {
+    it('shows Continue with Google when activation context is VALID', async () => {
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+    })
+
+    it('invokes Google auth once when Continue with Google is clicked', async () => {
+      const user = userEvent.setup()
+      const signInWithGoogle = vi.fn().mockResolvedValue({ kind: 'redirect_initiated' })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithGoogle={signInWithGoogle}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Continue with Google' }))
+
+      await waitFor(() => {
+        expect(signInWithGoogle).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it('prevents duplicate Google OAuth requests on rapid clicks', async () => {
+      let resolveOAuth!: () => void
+      const signInWithGoogle = vi.fn(
+        () =>
+          new Promise<{ kind: 'redirect_initiated' }>((resolve) => {
+            resolveOAuth = () => resolve({ kind: 'redirect_initiated' })
+          }),
+      )
+      const user = userEvent.setup()
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithGoogle={signInWithGoogle}
+        />,
+      )
+
+      const googleButton = screen.getByRole('button', { name: 'Continue with Google' })
+      await user.click(googleButton)
+      await user.click(googleButton)
+
+      expect(signInWithGoogle).toHaveBeenCalledTimes(1)
+      resolveOAuth()
+    })
+
+    it('shows safe retryable UI when Google OAuth initiation fails', async () => {
+      const user = userEvent.setup()
+      const signInWithGoogle = vi.fn().mockResolvedValue({
+        kind: 'error',
+        error: { code: 'unknown', message: 'We could not start Google sign-in.' },
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithGoogle={signInWithGoogle}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Continue with Google' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent(/Google sign-in/i)
+      })
+      expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled()
+    })
+
+    it('does not start Google OAuth when activation context is EXPIRED', async () => {
+      const user = userEvent.setup()
+      const signInWithGoogle = vi.fn()
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'EXPIRED',
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          signInWithGoogle={signInWithGoogle}
+          signUp={vi.fn()}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-expired-notice')).toBeInTheDocument()
+      })
+
+      const googleButton = screen.getByRole('button', { name: 'Continue with Google' })
+      expect(googleButton).toBeDisabled()
+      await user.click(googleButton)
+      expect(signInWithGoogle).not.toHaveBeenCalled()
+    })
+
+    it('does not start Google OAuth when activation context is NONE', async () => {
+      const user = userEvent.setup()
+      const signInWithGoogle = vi.fn()
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'NONE',
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          signInWithGoogle={signInWithGoogle}
+          signUp={vi.fn()}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-context-missing-notice')).toBeInTheDocument()
+      })
+
+      const googleButton = screen.getByRole('button', { name: 'Continue with Google' })
+      expect(googleButton).toBeDisabled()
+      await user.click(googleButton)
+      expect(signInWithGoogle).not.toHaveBeenCalled()
+    })
+
+    it('does not arm claim when Google-authenticated user has EXPIRED context', async () => {
+      mockUseAuthContext.mockReturnValue({
+        isInitializing: false,
+        isAuthenticated: true,
+        user: {
+          id: '1',
+          email: 'google@example.invalid',
+          emailConfirmed: true,
+        },
+        signOut: vi.fn(),
+        refresh: vi.fn(),
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={{
+            status: 'EXPIRED',
+            isLoading: false,
+            error: false,
+            retry: vi.fn(),
+          }}
+        />,
+      )
+
+      expect(screen.getByTestId('activation-expired-notice')).toBeInTheDocument()
+      expect(
+        mockUseActivationClaimWhenReady.mock.calls.some((call) => call[0]?.ready === true),
+      ).toBe(false)
+    })
+
+    it('does not arm claim when Google-authenticated user has NONE context', async () => {
+      mockUseAuthContext.mockReturnValue({
+        isInitializing: false,
+        isAuthenticated: true,
+        user: {
+          id: '1',
+          email: 'google@example.invalid',
+          emailConfirmed: true,
+        },
+        signOut: vi.fn(),
+        refresh: vi.fn(),
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={{
+            status: 'NONE',
+            isLoading: false,
+            error: false,
+            retry: vi.fn(),
+          }}
+        />,
+      )
+
+      expect(screen.getByTestId('activation-context-missing-notice')).toBeInTheDocument()
+      expect(
+        mockUseActivationClaimWhenReady.mock.calls.some((call) => call[0]?.ready === true),
+      ).toBe(false)
+    })
+  })
 })

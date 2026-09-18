@@ -13,6 +13,7 @@ export type ActivationAccountSetupVariant = 'page' | 'progressive'
 
 export interface CreateAccountScreenProps {
   signUp?: AuthService['signUp']
+  signInWithGoogle?: AuthService['signInWithGoogle']
   /**
    * Builds the account-confirmation `emailRedirectTo` URL, embedding the opaque
    * cross-device continuation reference when an activation context exists.
@@ -37,6 +38,7 @@ export interface ActivationAccountSetupProps extends CreateAccountScreenProps {
 
 export interface SignInScreenProps {
   signIn?: AuthService['signIn']
+  signInWithGoogle?: AuthService['signInWithGoogle']
   onCreateAccount?: () => void
   onForgotPassword?: () => void
   /**
