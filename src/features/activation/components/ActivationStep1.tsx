@@ -32,6 +32,7 @@ import ActivationStatusPlate from './ActivationStatusPlate'
 import BrandLockup from './BrandLockup'
 import CheckingOrderButton from './CheckingOrderButton'
 import HelpSheet from './HelpSheet'
+import LoadingSpinner from './LoadingSpinner'
 import KeylinePlate from './KeylinePlate'
 import OrderIdField from './OrderIdField'
 import PrimaryButton from './PrimaryButton'
@@ -76,6 +77,10 @@ export default function ActivationStep1({
   const activationContextResolution = useActivationContextResolution()
   const { status: resolvedContextStatus, isLoading: contextResolving } =
     activationContextResolution
+  const isInitialContextRestoring =
+    !accountSetupUnlocked &&
+    (contextResolving ||
+      (resolvedContextStatus === 'VALID' && !isActivationEntryDeferred()))
 
   const orderIdValid = isValidOrderId(orderId)
   const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdValid
@@ -149,6 +154,7 @@ export default function ActivationStep1({
 
     if (
       phase !== 'entry' ||
+      contextResolving ||
       !orderIdValid ||
       !autoVerifyEligible ||
       verifyInFlightRef.current ||
@@ -162,7 +168,7 @@ export default function ActivationStep1({
     }, AUTO_VERIFY_DEBOUNCE_MS)
 
     return () => globalThis.clearTimeout(timeoutId)
-  }, [orderId, orderIdValid, autoVerifyEligible, phase, runVerification])
+  }, [orderId, orderIdValid, autoVerifyEligible, contextResolving, phase, runVerification])
 
   // Resume the progressive account step after refresh/navigation when a valid
   // HttpOnly activation context already exists (direct /activate return visits).
@@ -221,7 +227,7 @@ export default function ActivationStep1({
     setSubmitAttempted(true)
     setFieldTouched(true)
 
-    if (!orderIdValid || isChecking) {
+    if (!orderIdValid || isChecking || contextResolving) {
       if (!orderIdValid) {
         orderIdRef.current?.focus()
       }
@@ -460,6 +466,18 @@ export default function ActivationStep1({
               onRestartActivation={handleUseAnotherOrder}
               onEnterApp={onEnterApp}
             />
+          ) : isInitialContextRestoring ? (
+            <div
+              data-testid="activation-context-restoring"
+              className="py-2"
+              aria-busy="true"
+              aria-live="polite"
+            >
+              <span className="inline-flex items-center gap-2 text-[15px] leading-[1.55] text-white/70">
+                <LoadingSpinner />
+                Restoring your activation…
+              </span>
+            </div>
           ) : showStatusPlate && statusContent ? (
             <ActivationStatusPlate
               data-testid="activation-result-card"
