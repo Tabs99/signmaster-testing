@@ -1704,6 +1704,8 @@ describe('ActivationStep1', () => {
       })
 
       expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdRawTooLong)
       expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
 
       await act(async () => {
@@ -1735,7 +1737,10 @@ describe('ActivationStep1', () => {
         await Promise.resolve()
       })
 
-      expect(screen.getByLabelText('Amazon order number')).toHaveValue(VALID_ORDER_ID)
+      const field = screen.getByLabelText('Amazon order number')
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdRawTooLong)
       expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
 
       await act(async () => {
@@ -1747,6 +1752,48 @@ describe('ActivationStep1', () => {
       expect(verifyOrder).not.toHaveBeenCalled()
       expect(mockCreateActivationContext).not.toHaveBeenCalled()
       vi.unstubAllGlobals()
+    })
+
+    it('does not show too-long error for a clean valid paste before blur or submit', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) => (type === 'text' ? VALID_ORDER_ID_DIGITS : ''),
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
+    })
+
+    it('clears too-long error after the user re-enters a valid 17-digit source', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+
+      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdRawTooLong)
+
+      fireEvent.change(field, { target: { value: VALID_ORDER_ID_DIGITS } })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
+
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
     })
 
     it('allows manual submit for a normal exact 17-digit entry', async () => {

@@ -88,7 +88,9 @@ export default function ActivationStep1({
 
   const orderIdValid = isValidOrderId(orderId)
   const orderIdSubmittable = orderIdValid && orderIdSourceWithinLimit
-  const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdSubmittable
+  const overlongRawSource = orderIdValid && !orderIdSourceWithinLimit
+  const showOrderIdError =
+    (fieldTouched || submitAttempted || overlongRawSource) && !orderIdSubmittable
   const orderIdErrorOverride =
     showOrderIdError && orderIdValid && !orderIdSourceWithinLimit
       ? VALIDATION_MESSAGES.orderIdRawTooLong

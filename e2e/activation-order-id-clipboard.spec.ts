@@ -62,6 +62,8 @@ test.describe('Order ID clipboard UX (CP7)', () => {
     await page.getByRole('button', { name: 'Paste' }).click()
 
     await expect(page.getByLabel('Amazon order number')).toHaveValue(FIXTURE_ORDER_ID)
+    await expect(page.getByLabel('Amazon order number')).toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByRole('alert')).toContainText(/too many digits/i)
     await expect(page.getByRole('button', { name: 'Check my order' })).toBeDisabled()
     await expect(page.getByTestId('activation-entry-form')).toBeVisible()
     await expect(page.getByTestId('activation-account-setup')).toHaveCount(0)
