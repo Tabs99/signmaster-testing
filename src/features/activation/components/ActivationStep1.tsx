@@ -14,6 +14,11 @@ import {
   type ActivationStep1Props,
   type ActivationUiPhase,
 } from '../types/activationResult'
+import {
+  clearActivationEntryDeferral,
+  deferActivationEntryResume,
+  isActivationEntryDeferred,
+} from '../utils/progressiveActivationSession'
 import { isValidOrderId } from '../utils/validation'
 
 /**
@@ -30,13 +35,17 @@ import HelpSheet from './HelpSheet'
 import KeylinePlate from './KeylinePlate'
 import OrderIdField from './OrderIdField'
 import PrimaryButton from './PrimaryButton'
+import ActivationAccountSetup from '../../account/components/ActivationAccountSetup'
+import { useActivationContextResolution } from '../hooks/useActivationContextResolution'
 
 export default function ActivationStep1({
   verifyOrder = verifyActivationOrder,
   createContext = createActivationContext,
-  onContinueToAccount,
+  onContinueToAccount: _legacyOnContinueToAccount,
   onSignIn,
+  onEnterApp,
 }: ActivationStep1Props = {}) {
+  void _legacyOnContinueToAccount
   const orderIdRef = useRef<HTMLInputElement>(null)
   const showMeWhereRef = useRef<HTMLButtonElement>(null)
   const getSupportRef = useRef<HTMLButtonElement>(null)
@@ -47,8 +56,10 @@ export default function ActivationStep1({
   // or automatic). Lets auto-verification skip a value that has already been
   // requested, so the same unchanged Order ID is never verified twice.
   const lastRequestedOrderIdRef = useRef<string | null>(null)
+  const eligibleContextCreateStartedRef = useRef(false)
 
   const [orderId, setOrderId] = useState('')
+  const [accountSetupUnlocked, setAccountSetupUnlocked] = useState(false)
   const [autoVerifyEligible, setAutoVerifyEligible] = useState(false)
   const [fieldTouched, setFieldTouched] = useState(false)
   const [submitAttempted, setSubmitAttempted] = useState(false)
@@ -62,6 +73,9 @@ export default function ActivationStep1({
   const [helpInitialSection, setHelpInitialSection] = useState<HelpSheetSection | null>(0)
   const [helpTitle, setHelpTitle] = useState('Finding your Amazon order number')
   const [contextCreating, setContextCreating] = useState(false)
+  const activationContextResolution = useActivationContextResolution()
+  const { status: resolvedContextStatus, isLoading: contextResolving } =
+    activationContextResolution
 
   const orderIdValid = isValidOrderId(orderId)
   const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdValid
@@ -150,6 +164,25 @@ export default function ActivationStep1({
     return () => globalThis.clearTimeout(timeoutId)
   }, [orderId, orderIdValid, autoVerifyEligible, phase, runVerification])
 
+  // Resume the progressive account step after refresh/navigation when a valid
+  // HttpOnly activation context already exists (direct /activate return visits).
+  useEffect(() => {
+    if (contextResolving || accountSetupUnlocked) {
+      return
+    }
+
+    if (
+      resolvedContextStatus === 'VALID' &&
+      !isActivationEntryDeferred()
+    ) {
+      eligibleContextCreateStartedRef.current = true
+      setAccountSetupUnlocked(true)
+      setPhase('result')
+      setResultKind('eligible')
+      setPresentedResultKind('eligible')
+    }
+  }, [accountSetupUnlocked, contextResolving, resolvedContextStatus])
+
   async function applyVerificationResult(result: ActivationVerifyResult) {
     if (result.kind === 'invalid_order_id') {
       setPhase('entry')
@@ -203,6 +236,8 @@ export default function ActivationStep1({
       setOrderId('')
       setAutoVerifyEligible(false)
     }
+    setAccountSetupUnlocked(false)
+    eligibleContextCreateStartedRef.current = false
     setPhase('entry')
     setResultKind(null)
     setPresentedResultKind(null)
@@ -214,6 +249,7 @@ export default function ActivationStep1({
   }
 
   function handleUseAnotherOrder() {
+    deferActivationEntryResume()
     returnToEntry({ clearOrderId: true, focusField: true })
   }
 
@@ -234,23 +270,44 @@ export default function ActivationStep1({
     }
   }
 
+  // After an eligible verification, create the HttpOnly activation context and
+  // reveal account setup inline (Checkpoint 3 progressive activation).
+  useEffect(() => {
+    if (
+      resultKind !== 'eligible' ||
+      phase !== 'result' ||
+      accountSetupUnlocked ||
+      contextCreating ||
+      eligibleContextCreateStartedRef.current
+    ) {
+      return
+    }
+
+    eligibleContextCreateStartedRef.current = true
+
+    void (async () => {
+      const created = await persistEligibleContext(orderId)
+      if (created) {
+        clearActivationEntryDeferral()
+        setAccountSetupUnlocked(true)
+        activationContextResolution.retry()
+        return
+      }
+
+      eligibleContextCreateStartedRef.current = false
+      setResultKind('service_unavailable')
+      setPresentedResultKind('service_unavailable')
+    })()
+  }, [resultKind, phase, accountSetupUnlocked, contextCreating, orderId])
+
   async function handleStatusPrimaryAction() {
     if (!resultKind) {
       return
     }
 
     switch (resultKind) {
-      case 'eligible': {
-        const created = await persistEligibleContext(orderId)
-        if (!created) {
-          setResultKind('service_unavailable')
-          setPresentedResultKind('service_unavailable')
-          return
-        }
-
-        onContinueToAccount?.()
+      case 'eligible':
         break
-      }
       case 'not_found':
         returnToEntry({ focusField: true })
         break
@@ -301,7 +358,16 @@ export default function ActivationStep1({
 
     const content = getActivationStatusContent(resultKind)
 
-    if (resultKind === 'eligible' && !onContinueToAccount) {
+    if (resultKind === 'eligible') {
+      if (contextCreating) {
+        return {
+          label: 'Preparing account setup…',
+          onClick: () => undefined,
+          disabled: true,
+          loading: true,
+        }
+      }
+
       return undefined
     }
 
@@ -310,9 +376,8 @@ export default function ActivationStep1({
     }
 
     const disabled =
-      (resultKind === 'rate_limited' &&
-        (rateLimitRetryAt !== null ? !rateLimitRetryReady : true)) ||
-      (resultKind === 'eligible' && contextCreating)
+      resultKind === 'rate_limited' &&
+      (rateLimitRetryAt !== null ? !rateLimitRetryReady : true)
 
     return {
       label: content.primaryLabel,
@@ -320,7 +385,7 @@ export default function ActivationStep1({
         void handleStatusPrimaryAction()
       },
       disabled,
-      loading: resultKind === 'eligible' && contextCreating,
+      loading: false,
     }
   }
 
@@ -345,7 +410,9 @@ export default function ActivationStep1({
     : null
   const isResultChecking = phase === 'checking' && presentedResultKind !== null
   const showStatusPlate = Boolean(
-    presentedResultKind && (phase === 'result' || isResultChecking),
+    !accountSetupUnlocked &&
+      presentedResultKind &&
+      (phase === 'result' || isResultChecking),
   )
 
   function resolveRetryCheckingPrimaryAction() {
@@ -364,20 +431,36 @@ export default function ActivationStep1({
 
         <header className="mb-5 max-[667px]:mb-3">
           <p className="font-mono text-[10.5px] font-semibold uppercase tracking-step text-keyline-gold">
-            Step 1 of 2 · Verify purchase
+            {accountSetupUnlocked
+              ? 'Step 2 of 2 · Create account'
+              : 'Step 1 of 2 · Verify purchase'}
           </p>
           <h1 className="mt-[11px] text-[29px] font-extrabold leading-[1.08] tracking-[-0.022em] text-white max-[667px]:mt-2 lg:text-[30px]">
-            Unlock your SignMaster app
+            {accountSetupUnlocked ? 'Complete your SignMaster setup' : 'Unlock your SignMaster app'}
           </h1>
-          <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
-            Enter the Amazon order number for your{' '}
-            <span className="font-semibold text-white/90">101 UK Road Sign Flashcards</span>. App
-            access is included with your pack at no extra cost.
-          </p>
+          {accountSetupUnlocked ? (
+            <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
+              Your purchase is verified. Create an account or sign in to activate access.
+            </p>
+          ) : (
+            <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
+              Enter the Amazon order number for your{' '}
+              <span className="font-semibold text-white/90">101 UK Road Sign Flashcards</span>. App
+              access is included with your pack at no extra cost.
+            </p>
+          )}
         </header>
 
         <KeylinePlate className="mt-5 max-[667px]:mt-3">
-          {showStatusPlate && statusContent ? (
+          {accountSetupUnlocked ? (
+            <ActivationAccountSetup
+              variant="progressive"
+              activationContextResolution={activationContextResolution}
+              onSignIn={onSignIn}
+              onRestartActivation={handleUseAnotherOrder}
+              onEnterApp={onEnterApp}
+            />
+          ) : showStatusPlate && statusContent ? (
             <ActivationStatusPlate
               data-testid="activation-result-card"
               tone={statusContent.tone}
@@ -426,10 +509,22 @@ export default function ActivationStep1({
           )}
         </KeylinePlate>
 
-        <p className="mt-4 text-xs leading-[1.55] text-white/[0.5] max-[667px]:mt-2">
-          Your order number is used only to verify your purchase and manage your SignMaster
-          access.
-        </p>
+        {accountSetupUnlocked ? (
+          <p className="mt-4 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:mt-2">
+            <button
+              type="button"
+              onClick={handleUseAnotherOrder}
+              className="keyline-support-action"
+            >
+              Use another order
+            </button>
+          </p>
+        ) : (
+          <p className="mt-4 text-xs leading-[1.55] text-white/[0.5] max-[667px]:mt-2">
+            Your order number is used only to verify your purchase and manage your SignMaster
+            access.
+          </p>
+        )}
 
         <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
           Need help with activation?{' '}

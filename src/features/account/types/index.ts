@@ -1,5 +1,15 @@
+import type { ActivationContextResolutionStatus } from '../../../lib/api/activationContextApi'
 import type { AuthService } from '../../../lib/auth/authService'
 import type { SignUpResult } from '../../../lib/auth/types'
+
+export type ActivationContextResolutionSnapshot = {
+  status: ActivationContextResolutionStatus | null
+  isLoading: boolean
+  error: boolean
+  retry: () => void
+}
+
+export type ActivationAccountSetupVariant = 'page' | 'progressive'
 
 export interface CreateAccountScreenProps {
   signUp?: AuthService['signUp']
@@ -17,6 +27,12 @@ export interface CreateAccountScreenProps {
    * activation-required state.
    */
   onEnterApp?: () => void
+}
+
+export interface ActivationAccountSetupProps extends CreateAccountScreenProps {
+  variant?: ActivationAccountSetupVariant
+  /** When set (progressive /activate), avoids a second context GET in the child. */
+  activationContextResolution?: ActivationContextResolutionSnapshot
 }
 
 export interface SignInScreenProps {

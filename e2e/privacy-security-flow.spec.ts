@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mockSupabaseAuthBootstrap, seedConfirmedSession } from './helpers/supabaseMock'
+import { mockStatefulActivationContext } from './helpers/progressiveActivation'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
 const FIXTURE_ORDER_DIGITS = '2051234567123456' // formatting-agnostic substring guard
@@ -23,8 +24,10 @@ function mockVerifyEligible(page: Page) {
 }
 
 function mockActivationContextRoutes(page: Page) {
+  let hasContext = false
   return page.route('**/api/activation/context', async (route) => {
     if (route.request().method() === 'POST') {
+      hasContext = true
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -39,7 +42,7 @@ function mockActivationContextRoutes(page: Page) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ status: 'VALID' }),
+        body: JSON.stringify({ status: hasContext ? 'VALID' : 'NONE' }),
       })
       return
     }
@@ -79,11 +82,8 @@ test.describe('SignMaster privacy & security browser audit', () => {
     await page.goto('/activate')
     // A complete valid Order ID auto-verifies after a short debounce.
     await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
-    await expect(
-      page.getByRole('heading', { name: 'Your purchase is verified' }),
-    ).toBeVisible()
-    await page.getByRole('button', { name: 'Continue to account setup' }).click()
-    await expect(page).toHaveURL(/\/create-account$/)
+    await expect(page.getByTestId('activation-account-setup')).toBeVisible()
+    await expect(page).toHaveURL(/\/activate$/)
 
     const storage = await readBrowserStorage(page)
 

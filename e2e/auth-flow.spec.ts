@@ -4,6 +4,11 @@ import {
   mockSupabaseSignInSuccess,
   mockSupabaseSignUpSuccess,
 } from './helpers/supabaseMock'
+import {
+  expectProgressiveAccountSetupOnActivate,
+  mockActivationContextAlwaysValid,
+  mockStatefulActivationContext,
+} from './helpers/progressiveActivation'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
 const AUTH_TEST_EMAIL = 'auth-e2e-fixture@example.invalid'
@@ -25,27 +30,7 @@ function mockVerifyRoute(page: Page, status: string) {
 }
 
 function mockActivationContextCreate(page: Page) {
-  return page.route('**/api/activation/context', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'CREATED' }),
-      })
-      return
-    }
-
-    if (route.request().method() === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'VALID' }),
-      })
-      return
-    }
-
-    await route.continue()
-  })
+  return mockStatefulActivationContext(page)
 }
 
 function mockContinuationCreate(page: Page) {
@@ -115,22 +100,36 @@ test.describe('SignMaster auth foundation', () => {
     await mockSupabaseAuthBootstrap(page)
   })
 
-  test('A5 Continue navigates to create-account', async ({ page }) => {
+  test('progressive activate supports email/password account creation inline', async ({
+    page,
+  }) => {
+    await mockVerifyRoute(page, 'ELIGIBLE')
+    await mockActivationContextCreate(page)
+    await mockSupabaseSignUpSuccess(page, AUTH_TEST_EMAIL)
+    await mockContinuationCreate(page)
+    await mockActivationClaim(page, 'SUCCESS')
+    await page.goto('/activate')
+    await fillValidOrderId(page)
+    await submitOrderCheck(page)
+    await expectProgressiveAccountSetupOnActivate(page)
+
+    await page.getByLabel('Email Address').fill(AUTH_TEST_EMAIL)
+    await page.getByLabel('Create Password').fill(AUTH_TEST_PASSWORD)
+    await page.getByLabel('Confirm Password').fill(AUTH_TEST_PASSWORD)
+    await page.getByRole('button', { name: 'Create Account & Continue' }).click()
+
+    await expect(page).toHaveURL(/\/activate$/)
+    await expect(page.getByText(/SignMaster is activated/i)).toBeVisible()
+  })
+
+  test('A5 eligible verification reveals inline account setup on activate', async ({ page }) => {
     await mockVerifyRoute(page, 'ELIGIBLE')
     await mockActivationContextCreate(page)
     await page.goto('/activate')
     await fillValidOrderId(page)
     await submitOrderCheck(page)
 
-    await expect(
-      page.getByRole('heading', { name: 'Your purchase is verified' }),
-    ).toBeVisible()
-    await page.getByRole('button', { name: 'Continue to account setup' }).click()
-
-    await expect(page).toHaveURL(/\/create-account$/)
-    await expect(
-      page.getByRole('heading', { name: 'Create your SignMaster account' }),
-    ).toBeVisible()
+    await expectProgressiveAccountSetupOnActivate(page)
   })
 
   test('A9 Sign in navigates to sign-in screen', async ({ page }) => {
@@ -152,7 +151,7 @@ test.describe('SignMaster auth foundation', () => {
     page,
   }) => {
     await mockSupabaseSignUpSuccess(page, AUTH_TEST_EMAIL)
-    await mockActivationContextCreate(page)
+    await mockActivationContextAlwaysValid(page)
     await mockContinuationCreate(page)
     await mockActivationClaim(page, 'SUCCESS')
     await page.goto('/create-account')
@@ -169,7 +168,7 @@ test.describe('SignMaster auth foundation', () => {
   test('sign-in with confirmed session and valid context activates access', async ({ page }) => {
     await mockEntitlementNone(page)
     await mockSupabaseSignInSuccess(page, AUTH_TEST_EMAIL)
-    await mockActivationContextCreate(page)
+    await mockActivationContextAlwaysValid(page)
     await mockActivationClaim(page, 'SUCCESS')
     await page.goto('/sign-in')
 

@@ -4,6 +4,7 @@ import {
   mockSupabaseSignInSuccess,
   seedConfirmedSession,
 } from './helpers/supabaseMock'
+import { mockStatefulActivationContext } from './helpers/progressiveActivation'
 
 const EMAIL = 'keyboard-e2e-fixture@example.invalid'
 const PASSWORD = 'Secure123!'
@@ -63,6 +64,7 @@ test.describe('SignMaster keyboard accessibility', () => {
 
   test('activation order entry is submittable with the keyboard only', async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
+    await mockStatefulActivationContext(page)
     await page.route('**/api/activation/verify', async (route) => {
       if (route.request().method() !== 'POST') {
         await route.continue()
@@ -83,9 +85,7 @@ test.describe('SignMaster keyboard accessibility', () => {
     await page.keyboard.type(ORDER_ID)
     await page.keyboard.press('Enter')
 
-    await expect(
-      page.getByRole('heading', { name: 'Your purchase is verified' }),
-    ).toBeVisible()
+    await expect(page.getByTestId('activation-account-setup')).toBeVisible()
   })
 
   test('B10 primary action is keyboard-focusable and activates with Enter', async ({ page }) => {

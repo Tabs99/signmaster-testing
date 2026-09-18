@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
+import {
+  expectProgressiveAccountSetupOnActivate,
+  mockStatefulActivationContext,
+} from './helpers/progressiveActivation'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
 const NOT_SHIPPED_FIXTURE_ORDER_ID = '222-2222222-2222222'
@@ -75,6 +79,7 @@ function mockVerifyRoute(
 test.describe('SignMaster activation verification', () => {
   test.beforeEach(async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
+    await mockStatefulActivationContext(page)
     await page.goto('/activate')
   })
 
@@ -128,7 +133,7 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByLabel('Amazon order number')).toBeDisabled()
 
     releaseResponse?.()
-    await expect(page.getByRole('heading', { name: 'Your purchase is verified' })).toBeVisible()
+    await expectProgressiveAccountSetupOnActivate(page)
   })
 
   test('blocks duplicate submission while checking', async ({ page }) => {
@@ -359,7 +364,7 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0)
 
     releaseRetry!()
-    await expect(page.getByRole('heading', { name: 'Your purchase is verified' })).toBeVisible()
+    await expectProgressiveAccountSetupOnActivate(page)
     expect(callCount).toBe(2)
   })
 

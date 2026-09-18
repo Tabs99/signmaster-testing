@@ -5,6 +5,31 @@ import type { ActivationVerifyResult } from '../../../lib/api/activationApi'
 import ActivationStep1 from '../components/ActivationStep1'
 import { VALIDATION_MESSAGES } from '../utils/validation'
 
+vi.mock('../../../lib/api/activationContextApi', () => ({
+  resolveActivationContext: vi.fn(),
+  createActivationContext: vi.fn(),
+}))
+
+vi.mock('../../auth/context/AuthProvider', () => ({
+  useAuthContext: vi.fn(),
+}))
+
+vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
+  useActivationClaimWhenReady: vi.fn(() => ({ state: { kind: 'idle' }, retry: vi.fn() })),
+}))
+
+import {
+  createActivationContext,
+  resolveActivationContext,
+} from '../../../lib/api/activationContextApi'
+import { useAuthContext } from '../../auth/context/AuthProvider'
+import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
+
+const mockCreateActivationContext = vi.mocked(createActivationContext)
+const mockResolveActivationContext = vi.mocked(resolveActivationContext)
+const mockUseAuthContext = vi.mocked(useAuthContext)
+const mockUseActivationClaimWhenReady = vi.mocked(useActivationClaimWhenReady)
+
 const ORDER_HELP_DIALOG = 'Finding your Amazon order number'
 const SUPPORT_HELP_DIALOG = 'SignMaster activation help'
 const VALID_ORDER_ID = '205-1234567-1234567'
@@ -56,11 +81,42 @@ function expectCheckingButton(button: HTMLElement) {
   expect(button.querySelector('svg[aria-hidden="true"]')).toBeTruthy()
 }
 
+async function expectProgressiveAccountSetupVisible() {
+  mockResolveActivationContext.mockResolvedValue({
+    kind: 'status',
+    status: 'VALID',
+  })
+  await waitFor(() => {
+    expect(screen.getByTestId('activation-account-setup')).toBeInTheDocument()
+  })
+  expect(
+    screen.getByRole('heading', {
+      name: 'Create your account to unlock your companion app.',
+    }),
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+}
+
 describe('ActivationStep1', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
-    vi.restoreAllMocks()
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'NONE',
+    })
+    mockCreateActivationContext.mockResolvedValue({ kind: 'created' })
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+      refresh: vi.fn(),
+    })
+    mockUseActivationClaimWhenReady.mockReturnValue({
+      state: { kind: 'idle' },
+      retry: vi.fn(),
+    })
   })
 
   it('renders approved essential Step 1 content', () => {
@@ -172,7 +228,6 @@ describe('ActivationStep1', () => {
 
   it('submits with Enter and does not call the verify API or write localStorage', async () => {
     const user = userEvent.setup()
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const verifyOrder = createVerifyMock({
       kind: 'business_status',
       status: 'ELIGIBLE',
@@ -181,13 +236,11 @@ describe('ActivationStep1', () => {
     render(<ActivationStep1 verifyOrder={verifyOrder} />)
 
     const field = screen.getByLabelText('Amazon order number')
-    await user.type(field, VALID_ORDER_ID)
+    await user.type(field, '205-12345')
     await user.keyboard('{Enter}')
 
-    await waitFor(() => {
-      expect(fetchSpy).not.toHaveBeenCalled()
-    })
-    expectNoStorageWrites()
+    expect(verifyOrder).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem('signmaster_activation_entry_deferred')).toBeNull()
     expect(
       screen.queryByRole('heading', { name: 'Create your SignMaster account' }),
     ).not.toBeInTheDocument()
@@ -356,11 +409,7 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('disables the order field while checking', async () => {
@@ -376,11 +425,7 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('sets aria-busy on the submit button while checking', async () => {
@@ -396,11 +441,7 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('blocks duplicate clicks while verification is in flight', async () => {
@@ -419,11 +460,7 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('blocks duplicate Enter submissions while verification is in flight', async () => {
@@ -439,133 +476,105 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
     })
 
     describe('A5 ELIGIBLE', () => {
-      it('shows eligible heading and body copy', async () => {
+      it('shows progressive verified copy and inline account setup', async () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
+        const createContext = vi.fn().mockImplementation(async () => {
+          mockResolveActivationContext.mockResolvedValue({
+            kind: 'status',
+            status: 'VALID',
+          })
+          return { kind: 'created' }
+        })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        render(
+          <ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />,
+        )
         await typeValidOrderId(user)
         await submitOrder(user)
 
+        await expectProgressiveAccountSetupVisible()
         await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          expect(screen.getByText('Order verified')).toBeInTheDocument()
         })
+        expect(screen.getByText('SignMaster 101 UK Road Sign Flashcards')).toBeInTheDocument()
         expect(
-          screen.getByText('Your SignMaster purchase has been verified.'),
+          screen.getByText('Your purchase is verified. Create an account or sign in to activate access.'),
         ).toBeInTheDocument()
-        expect(
-          screen.getByText(
-            'Next, create an account or sign in to activate access and save your progress.',
-          ),
-        ).toBeInTheDocument()
-        expect(screen.getByText(VALID_ORDER_ID)).toBeInTheDocument()
-        expectNoStorageWrites()
+        expect(localStorage.length).toBe(0)
+        expect(sessionStorage.getItem('signmaster_activation_entry_deferred')).toBeNull()
         expect(
           screen.queryByRole('heading', { name: 'Create your SignMaster account' }),
         ).not.toBeInTheDocument()
       })
 
-      it('does not show Continue without onContinueToAccount', async () => {
+      it('does not show Continue to account setup after eligible verification', async () => {
         const user = userEvent.setup()
-        const verifyOrder = createVerifyMock({
-          kind: 'business_status',
-          status: 'ELIGIBLE',
-        })
-
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
-        await typeValidOrderId(user)
-        await submitOrder(user)
-
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
-        expect(
-          screen.queryByRole('button', { name: 'Continue to account setup' }),
-        ).not.toBeInTheDocument()
-      })
-
-      it('shows Continue and calls onContinueToAccount when context creation succeeds', async () => {
-        const user = userEvent.setup()
-        const onContinueToAccount = vi.fn()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
         const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
 
-        render(
-          <ActivationStep1
-            verifyOrder={verifyOrder}
-            createContext={createContext}
-            onContinueToAccount={onContinueToAccount}
-          />,
-        )
+        render(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
-        const continueButton = await screen.findByRole('button', {
-          name: 'Continue to account setup',
-        })
-        await user.click(continueButton)
-
+        await expectProgressiveAccountSetupVisible()
+        expect(
+          screen.queryByRole('button', { name: 'Continue to account setup' }),
+        ).not.toBeInTheDocument()
         expect(createContext).toHaveBeenCalledWith('205-1234567-1234567')
-        expect(onContinueToAccount).toHaveBeenCalledTimes(1)
       })
 
-      it('blocks navigation when context creation fails', async () => {
+      it('creates activation context and reveals account setup inline', async () => {
         const user = userEvent.setup()
-        const onContinueToAccount = vi.fn()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'ELIGIBLE',
+        })
+        const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
+
+        render(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await expectProgressiveAccountSetupVisible()
+        expect(createContext).toHaveBeenCalledTimes(1)
+        expect(screen.getByText('Step 2 of 2 · Create account')).toBeInTheDocument()
+      })
+
+      it('shows service unavailable when inline context creation fails', async () => {
+        const user = userEvent.setup()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
         const createContext = vi.fn().mockResolvedValue({ kind: 'service_unavailable' })
 
-        render(
-          <ActivationStep1
-            verifyOrder={verifyOrder}
-            createContext={createContext}
-            onContinueToAccount={onContinueToAccount}
-          />,
-        )
+        render(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
-        const continueButton = await screen.findByRole('button', {
-          name: 'Continue to account setup',
-        })
-        await user.click(continueButton)
-
-        expect(onContinueToAccount).not.toHaveBeenCalled()
         await waitFor(() => {
           expect(
             screen.getByRole('heading', { name: "We can't check your order right now" }),
           ).toBeInTheDocument()
         })
+        expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
       })
 
-      it('does not create duplicate contexts on repeated Continue clicks', async () => {
+      it('does not create duplicate contexts during progressive unlock', async () => {
         const user = userEvent.setup()
-        const onContinueToAccount = vi.fn()
-        let resolveCreate:
-          | ((value: { kind: 'created' }) => void)
-          | undefined
+        let resolveCreate: ((value: { kind: 'created' }) => void) | undefined
         const createContext = vi.fn(
           () =>
             new Promise<{ kind: 'created' }>((resolve) => {
@@ -580,23 +589,14 @@ describe('ActivationStep1', () => {
               status: 'ELIGIBLE',
             })}
             createContext={createContext}
-            onContinueToAccount={onContinueToAccount}
           />,
         )
         await typeValidOrderId(user)
         await submitOrder(user)
 
-        const continueButton = await screen.findByRole('button', {
-          name: 'Continue to account setup',
-        })
-        await user.click(continueButton)
-        await user.click(continueButton)
-
         expect(createContext).toHaveBeenCalledTimes(1)
         resolveCreate?.({ kind: 'created' })
-        await waitFor(() => {
-          expect(onContinueToAccount).toHaveBeenCalledTimes(1)
-        })
+        await expectProgressiveAccountSetupVisible()
       })
     })
 
@@ -719,11 +719,9 @@ describe('ActivationStep1', () => {
 
         await user.click(await screen.findByRole('button', { name: 'Check again' }))
 
-        await waitFor(() => {
+        await waitFor(async () => {
           expect(verifyOrder).toHaveBeenCalledTimes(2)
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          await expectProgressiveAccountSetupVisible()
         })
         expect(
           screen.queryByRole('heading', { name: 'Your order is confirmed' }),
@@ -799,11 +797,7 @@ describe('ActivationStep1', () => {
 
         resolveRetry({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
         expect(
           screen.queryByRole('heading', { name: 'Your order is confirmed' }),
         ).not.toBeInTheDocument()
@@ -1136,9 +1130,11 @@ describe('ActivationStep1', () => {
         })
 
         expect(verifyOrder).toHaveBeenCalledTimes(2)
-        expect(
-          screen.getByRole('heading', { name: 'Your purchase is verified' }),
-        ).toBeInTheDocument()
+        await act(async () => {
+          await Promise.resolve()
+          await Promise.resolve()
+        })
+        expect(screen.getByTestId('activation-account-setup')).toBeInTheDocument()
       })
     })
 
@@ -1183,11 +1179,9 @@ describe('ActivationStep1', () => {
 
         await user.click(await screen.findByRole('button', { name: 'Try again' }))
 
-        await waitFor(() => {
+        await waitFor(async () => {
           expect(verifyOrder).toHaveBeenCalledTimes(2)
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          await expectProgressiveAccountSetupVisible()
         })
         expect(
           screen.queryByRole('heading', { name: "We can't check your order right now" }),
@@ -1221,11 +1215,7 @@ describe('ActivationStep1', () => {
 
         resolveRetry({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
         expect(
           screen.queryByRole('heading', { name: "We can't check your order right now" }),
         ).not.toBeInTheDocument()
@@ -1323,11 +1313,9 @@ describe('ActivationStep1', () => {
 
         await user.click(await screen.findByRole('button', { name: 'Try again' }))
 
-        await waitFor(() => {
+        await waitFor(async () => {
           expect(verifyOrder).toHaveBeenCalledTimes(2)
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          await expectProgressiveAccountSetupVisible()
         })
       })
     })
@@ -1699,33 +1687,127 @@ describe('ActivationStep1', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
       const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
-      const onContinueToAccount = vi.fn()
-      render(
-        <ActivationStep1
-          verifyOrder={verifyOrder}
-          createContext={createContext}
-          onContinueToAccount={onContinueToAccount}
-        />,
-      )
+      render(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
 
       setOrderIdValue(VALID_ORDER_ID_DIGITS)
       await advanceDebounce()
 
       await waitFor(() => {
+        expect(createContext).toHaveBeenCalledWith(VALID_ORDER_ID)
+      })
+      await expectProgressiveAccountSetupVisible()
+    })
+  })
+
+  describe('progressive activation (Checkpoint 3)', () => {
+    it('does not reveal account setup before verification completes', () => {
+      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+      expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+    })
+
+    it('does not reveal account setup on verification failure', async () => {
+      const user = userEvent.setup()
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'NOT_FOUND' })}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+
+      await waitFor(() => {
         expect(
-          screen.getByRole('heading', { name: 'Your purchase is verified' }),
+          screen.getByRole('heading', { name: "We can't verify that order" }),
         ).toBeInTheDocument()
       })
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
 
-      await act(async () => {
-        fireEvent.click(
-          screen.getByRole('button', { name: 'Continue to account setup' }),
-        )
-        await Promise.resolve()
+    it('resets to order entry when Use another order is chosen from progressive state', async () => {
+      const user = userEvent.setup()
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+      await expectProgressiveAccountSetupVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Use another order' }))
+
+      expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('resumes progressive account setup from VALID server context alone', async () => {
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'VALID',
       })
 
-      expect(createContext).toHaveBeenCalledWith(VALID_ORDER_ID)
-      expect(onContinueToAccount).toHaveBeenCalledTimes(1)
+      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+
+      await expectProgressiveAccountSetupVisible()
+      expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+    })
+
+    it('does not resume progressive setup when entry was deferred after Use another order', async () => {
+      sessionStorage.setItem('signmaster_activation_entry_deferred', '1')
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'VALID',
+      })
+
+      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+
+      await waitFor(() => {
+        expect(mockResolveActivationContext).toHaveBeenCalled()
+      })
+      expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('passes parent context resolution to inline account setup (no duplicate child GET)', async () => {
+      const user = userEvent.setup()
+      const createContext = vi.fn().mockImplementation(async () => {
+        mockResolveActivationContext.mockResolvedValue({
+          kind: 'status',
+          status: 'VALID',
+        })
+        return { kind: 'created' }
+      })
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })}
+          createContext={createContext}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+      await expectProgressiveAccountSetupVisible()
+
+      // Mount + post-create refresh only; inline setup must not add a third GET.
+      expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
+    })
+
+    it('exposes sign-in from the progressive account section', async () => {
+      const user = userEvent.setup()
+      const onSignIn = vi.fn()
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })}
+          onSignIn={onSignIn}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+      await expectProgressiveAccountSetupVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }))
+      expect(onSignIn).toHaveBeenCalledTimes(1)
     })
   })
 })
