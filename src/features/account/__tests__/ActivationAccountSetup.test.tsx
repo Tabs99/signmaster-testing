@@ -775,4 +775,255 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       expect(retry).toHaveBeenCalledOnce()
     })
   })
+
+  describe('pre-CP5 state-machine hardening', () => {
+    const EXPIRED_CONTEXT_RESOLUTION = {
+      status: 'EXPIRED' as const,
+      isLoading: false,
+      error: false,
+      retry: vi.fn(),
+    }
+
+    function createDeferred<T>() {
+      let resolve!: (value: T) => void
+      const promise = new Promise<T>((res) => {
+        resolve = res
+      })
+      return { promise, resolve }
+    }
+
+    function claimReadyCalls() {
+      return mockUseActivationClaimWhenReady.mock.calls.filter(
+        (call) => call[0]?.ready === true,
+      )
+    }
+
+    it('auth-sync Retry double-submit protection ignores a second refresh while the first retry is in flight', async () => {
+      const user = userEvent.setup()
+      let isAuthenticated = false
+      const pendingRetryRefresh = createDeferred<{
+        id: string
+        email: string
+        emailConfirmed: boolean
+      } | null>()
+      const refresh = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockImplementationOnce(() => pendingRetryRefresh.promise)
+      const signUp = vi.fn().mockResolvedValue({
+        kind: 'success',
+        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        session: {
+          user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        },
+      })
+
+      mockUseAuthContext.mockImplementation(() => ({
+        isInitializing: false,
+        isAuthenticated,
+        user: isAuthenticated
+          ? {
+              id: '1',
+              email: 'alex@example.invalid',
+              emailConfirmed: true,
+            }
+          : null,
+        signOut: vi.fn(),
+        refresh,
+      }))
+
+      const view = render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await fillValidAccountForm(user)
+      await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-auth-sync-notice')).toBeInTheDocument()
+      })
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(signUp).toHaveBeenCalledTimes(1)
+
+      const retryButton = screen.getByRole('button', { name: 'Retry' })
+      fireEvent.click(retryButton)
+      fireEvent.click(retryButton)
+
+      await waitFor(() => {
+        expect(refresh).toHaveBeenCalledTimes(2)
+        expect(screen.getByRole('button', { name: 'Signing you in…' })).toBeDisabled()
+      })
+      expect(signUp).toHaveBeenCalledTimes(1)
+
+      isAuthenticated = true
+      pendingRetryRefresh.resolve({
+        id: '1',
+        email: 'alex@example.invalid',
+        emailConfirmed: true,
+      })
+
+      view.rerender(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-claim-pending')).toBeInTheDocument()
+      })
+      expect(refresh).toHaveBeenCalledTimes(2)
+      expect(signUp).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not arm claim when activation context becomes EXPIRED during auth-sync recovery even after auth refresh succeeds', async () => {
+      const user = userEvent.setup()
+      let isAuthenticated = false
+      const pendingRetryRefresh = createDeferred<{
+        id: string
+        email: string
+        emailConfirmed: boolean
+      } | null>()
+      const refresh = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockImplementationOnce(async () => {
+          const updated = await pendingRetryRefresh.promise
+          if (updated?.emailConfirmed) {
+            isAuthenticated = true
+          }
+          return updated
+        })
+      const signUp = vi.fn().mockResolvedValue({
+        kind: 'success',
+        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        session: {
+          user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        },
+      })
+
+      mockUseAuthContext.mockImplementation(() => ({
+        isInitializing: false,
+        isAuthenticated,
+        user: isAuthenticated
+          ? {
+              id: '1',
+              email: 'alex@example.invalid',
+              emailConfirmed: true,
+            }
+          : null,
+        signOut: vi.fn(),
+        refresh,
+      }))
+
+      const view = render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await fillValidAccountForm(user)
+      await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-auth-sync-notice')).toBeInTheDocument()
+      })
+
+      view.rerender(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={EXPIRED_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+      pendingRetryRefresh.resolve({
+        id: '1',
+        email: 'alex@example.invalid',
+        emailConfirmed: true,
+      })
+
+      await waitFor(() => {
+        expect(refresh).toHaveBeenCalledTimes(2)
+      })
+
+      view.rerender(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={EXPIRED_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-expired-notice')).toBeInTheDocument()
+      })
+      expect(claimReadyCalls()).toHaveLength(0)
+      expect(screen.queryByTestId('activation-claim-pending')).not.toBeInTheDocument()
+      expect(screen.queryByText(/SignMaster is activated/i)).not.toBeInTheDocument()
+      expect(document.querySelector('[data-claim-outcome="success"]')).toBeNull()
+      expect(signUp).toHaveBeenCalledTimes(1)
+    })
+
+    it('still-unconfirmed email after recheck never arms claim and keeps confirmation UI', async () => {
+      const user = userEvent.setup()
+      const refresh = vi.fn().mockResolvedValue(null)
+
+      mockUseAuthContext.mockReturnValue({
+        isInitializing: false,
+        isAuthenticated: false,
+        user: null,
+        signOut: vi.fn(),
+        refresh,
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={vi.fn().mockResolvedValue({
+            kind: 'email_confirmation_required',
+            user: { id: '2', email: 'pending@example.invalid', emailConfirmed: false },
+          })}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await fillValidAccountForm(user)
+      await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('email-confirmation-continuation')).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByRole('button', { name: "I've confirmed my email" }))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('email-confirmation-not-seen')).toBeInTheDocument()
+        expect(
+          screen.getByText(
+            "We haven't seen the confirmation yet. Check your email and try again.",
+          ),
+        ).toBeInTheDocument()
+      })
+
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(claimReadyCalls()).toHaveLength(0)
+      expect(screen.getByTestId('email-confirmation-continuation')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Email Address')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('activation-claim-pending')).not.toBeInTheDocument()
+      expect(screen.queryByText(/SignMaster is activated/i)).not.toBeInTheDocument()
+    })
+  })
 })
