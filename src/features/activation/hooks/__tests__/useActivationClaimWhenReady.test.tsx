@@ -119,6 +119,28 @@ describe('useActivationClaimWhenReady', () => {
     expect(claim).toHaveBeenCalledTimes(2)
   })
 
+  it('does not claim again if ready toggles after a definitive success', async () => {
+    const claim = vi.fn().mockResolvedValue({ kind: 'outcome', outcome: 'success' })
+
+    const { rerender, result } = renderHook(
+      ({ ready }) =>
+        useActivationClaimWhenReady({
+          ready,
+          claim,
+        }),
+      { initialProps: { ready: true } },
+    )
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ kind: 'outcome', outcome: 'success' })
+    })
+
+    rerender({ ready: false })
+    rerender({ ready: true })
+
+    expect(claim).toHaveBeenCalledTimes(1)
+  })
+
   it('ignores retry after a definitive outcome', async () => {
     const claim = vi.fn().mockResolvedValue({ kind: 'outcome', outcome: 'success' })
 
