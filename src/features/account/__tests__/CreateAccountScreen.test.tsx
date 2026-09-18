@@ -37,6 +37,7 @@ describe('CreateAccountScreen', () => {
       isAuthenticated: false,
       user: null,
       signOut: vi.fn(),
+      refresh: vi.fn(),
     })
     mockUseActivationClaimWhenReady.mockReturnValue({
       state: { kind: 'idle' },
@@ -157,8 +158,13 @@ describe('CreateAccountScreen', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows loading state and completes successful signup without entitlement messaging', async () => {
+  it('shows loading state and refreshes auth after successful signup for claim', async () => {
     const user = userEvent.setup()
+    const refresh = vi.fn().mockResolvedValue({
+      id: '1',
+      email: 'alex@example.invalid',
+      emailConfirmed: true,
+    })
     let resolveSignUp: (value: SignUpResult) => void = () => undefined
     const signUp = vi.fn(
       (): Promise<SignUpResult> =>
@@ -166,6 +172,14 @@ describe('CreateAccountScreen', () => {
           resolveSignUp = resolve
         }),
     )
+
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+      refresh,
+    })
 
     render(
       <CreateAccountScreen
@@ -191,12 +205,9 @@ describe('CreateAccountScreen', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('Account created!')).toBeInTheDocument()
-      expect(
-        screen.getByText(/Activation will continue in a later step/i),
-      ).toBeInTheDocument()
-      expect(screen.queryByText(/companion app is ready/i)).not.toBeInTheDocument()
+      expect(refresh).toHaveBeenCalledOnce()
     })
+    expect(screen.queryByText('Account created!')).not.toBeInTheDocument()
   })
 
   it('shows existing-account alert with non-enumerating copy for duplicate registration', async () => {
@@ -256,9 +267,17 @@ describe('CreateAccountScreen', () => {
     })
   })
 
-  it('routes onward through the resolver via a Continue action after account creation', async () => {
+  it('enables claim after confirmed signup refreshes auth', async () => {
     const user = userEvent.setup()
-    const onEnterApp = vi.fn()
+    let isAuthenticated = false
+    const refresh = vi.fn().mockImplementation(async () => {
+      isAuthenticated = true
+      return {
+        id: '1',
+        email: 'alex@example.invalid',
+        emailConfirmed: true,
+      }
+    })
     const signUp = vi.fn().mockResolvedValue({
       kind: 'success',
       user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
@@ -267,11 +286,24 @@ describe('CreateAccountScreen', () => {
       },
     })
 
-    render(
+    mockUseAuthContext.mockImplementation(() => ({
+      isInitializing: false,
+      isAuthenticated,
+      user: isAuthenticated
+        ? {
+            id: '1',
+            email: 'alex@example.invalid',
+            emailConfirmed: true,
+          }
+        : null,
+      signOut: vi.fn(),
+      refresh,
+    }))
+
+    const view = render(
       <CreateAccountScreen
         signUp={signUp}
         buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
-        onEnterApp={onEnterApp}
       />,
     )
 
@@ -280,10 +312,22 @@ describe('CreateAccountScreen', () => {
     await user.type(screen.getByLabelText('Confirm Password'), 'Secure123!')
     await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
 
-    const continueButton = await screen.findByRole('button', { name: 'Continue' })
-    await user.click(continueButton)
+    await waitFor(() => {
+      expect(refresh).toHaveBeenCalledOnce()
+    })
 
-    expect(onEnterApp).toHaveBeenCalledOnce()
+    view.rerender(
+      <CreateAccountScreen
+        signUp={signUp}
+        buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
+        expect.objectContaining({ ready: true }),
+      )
+    })
   })
 
   it('does not render the brand gold divider on the activated confirmation screen', async () => {
@@ -314,6 +358,7 @@ describe('CreateAccountScreen', () => {
         emailConfirmed: true,
       },
       signOut: vi.fn(),
+      refresh: vi.fn(),
     })
 
     render(<CreateAccountScreen />)
@@ -337,6 +382,7 @@ describe('CreateAccountScreen', () => {
         emailConfirmed: true,
       },
       signOut: vi.fn(),
+      refresh: vi.fn(),
     })
 
     render(<CreateAccountScreen />)

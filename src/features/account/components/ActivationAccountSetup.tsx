@@ -38,45 +38,6 @@ import EyeToggle from './EyeToggle'
 import PasswordRequirement from './PasswordRequirement'
 import ValidTick from './ValidTick'
 
-function AccountSuccessCard({
-  claimOutcome,
-  onEnterApp,
-}: {
-  claimOutcome?: string
-  onEnterApp?: () => void
-}) {
-  return (
-    <article
-      className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl"
-      data-claim-outcome={claimOutcome}
-    >
-      <div className="mx-auto mb-[18px] flex h-[60px] w-[60px] items-center justify-center rounded-full bg-gradient-cta shadow-[0_4px_16px_rgba(240,192,74,0.3)]">
-        <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none">
-          <path
-            d="M6 13.5l5 5L20 8"
-            stroke="#0a1628"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-      <p className="text-xl font-extrabold tracking-tight text-white">Account created!</p>
-      <p className="mt-2 text-sm leading-relaxed text-white/65">
-        You&apos;re signed in. Activation will continue in a later step — your companion app
-        access is not unlocked yet.
-      </p>
-      {onEnterApp ? (
-        <div className="mt-6">
-          <PrimaryButton type="button" enabled onClick={onEnterApp} className="w-full">
-            Continue
-          </PrimaryButton>
-        </div>
-      ) : null}
-    </article>
-  )
-}
-
 export function PurchaseVerifiedBadge({ label = 'Purchase verified' }: { label?: string }) {
   return (
     <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-accent-gold/30 bg-accent-gold/10 px-3.5 py-1.5 pl-2.5">
@@ -259,8 +220,14 @@ export default function ActivationAccountSetup({
     ready: claimReady,
   })
   const claimActive = claimState.kind !== 'idle'
-  const claimOutcome =
-    claimState.kind === 'outcome' ? claimState.outcome : undefined
+  const pendingClaimStart =
+    resumeState === 'valid_context_confirmed_auth' && claimState.kind === 'idle'
+  const contextAllowsAccountCreation =
+    resumeState === 'valid_context' || resumeState === 'valid_context_unconfirmed_auth'
+  const hideAccountFormForActivation =
+    pendingClaimStart ||
+    claimActive ||
+    (resumeState === 'valid_context_confirmed_auth' && formStatus !== 'existing-account')
 
   const showVerifiedBadge =
     resumeState === 'valid_context' ||
@@ -294,7 +261,7 @@ export default function ActivationAccountSetup({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
 
-      if (contextLoading || contextError) {
+      if (contextLoading || contextError || !contextAllowsAccountCreation) {
         return
       }
 
@@ -331,7 +298,15 @@ export default function ActivationAccountSetup({
         const result = await signUp(email, password, { emailRedirectTo })
 
         if (result.kind === 'success') {
-          setFormStatus('done')
+          if (refreshAuth) {
+            const updated = await refreshAuth()
+            if (!updated?.emailConfirmed) {
+              setAuthError(AUTH_MESSAGES.networkError)
+              setFormStatus('idle')
+              return
+            }
+          }
+          setFormStatus('idle')
           return
         }
 
@@ -357,11 +332,13 @@ export default function ActivationAccountSetup({
     [
       buildConfirmationRedirect,
       contextError,
+      contextAllowsAccountCreation,
       contextLoading,
       email,
       emailOk,
       matchOk,
       passwordOk,
+      refreshAuth,
       signUp,
     ],
   )
@@ -375,8 +352,9 @@ export default function ActivationAccountSetup({
     return Boolean(updated?.emailConfirmed)
   }, [refreshAuth])
 
+  // recheckEmailConfirmation already refreshed auth; leave confirmation UI.
   const handleEmailConfirmed = useCallback(() => {
-    setFormStatus('done')
+    setFormStatus('idle')
   }, [])
 
   const handleChangeEmail = useCallback(() => {
@@ -394,7 +372,12 @@ export default function ActivationAccountSetup({
   const isLoading = formStatus === 'loading'
   const contextResolutionBlocked = contextLoading || contextError
   const canSubmit =
-    emailOk && passwordOk && matchOk && !isLoading && !contextResolutionBlocked
+    emailOk &&
+    passwordOk &&
+    matchOk &&
+    !isLoading &&
+    !contextResolutionBlocked &&
+    contextAllowsAccountCreation
 
   // Show the claim/continuation result whenever a claim is active. This covers
   // both the same-device path (after form submit) and the cross-device resume,
@@ -476,21 +459,32 @@ export default function ActivationAccountSetup({
     )
   }
 
-  if (formStatus === 'done') {
-    const doneContent = (
-      <>
-        {variant === 'page' ? <BrandLockup variant="desktop" /> : null}
-        <AccountSuccessCard claimOutcome={claimOutcome} onEnterApp={onEnterApp} />
-      </>
+  if (hideAccountFormForActivation && formStatus !== 'email-confirmation') {
+    const activatingContent = (
+      <div
+        data-testid="activation-claim-pending"
+        className="py-2"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <span className="inline-flex items-center gap-2 text-[15px] leading-[1.55] text-white/70">
+          <LoadingSpinner />
+          Activating your SignMaster access…
+        </span>
+      </div>
     )
 
     if (variant === 'progressive') {
-      return <AccountSetupLayout variant={variant}>{doneContent}</AccountSetupLayout>
+      return (
+        <AccountSetupLayout variant={variant}>{activatingContent}</AccountSetupLayout>
+      )
     }
 
     return (
       <PageShell>
-        <div className="my-auto flex w-full max-w-[420px] flex-col items-center">{doneContent}</div>
+        <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
+          {activatingContent}
+        </div>
       </PageShell>
     )
   }
