@@ -72,6 +72,8 @@ export type CreateAccountStatus =
   | 'loading'
   | 'existing-account'
   | 'email-confirmation'
+  | 'auth-sync-failed'
+  | 'auth-sync-retrying'
   | 'done'
 
 export type SignInStatus = 'idle' | 'loading' | 'done'

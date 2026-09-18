@@ -168,6 +168,7 @@ export default function ActivationAccountSetup({
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
   const submitInFlightRef = useRef(false)
+  const authSyncRetryInFlightRef = useRef(false)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -257,9 +258,42 @@ export default function ActivationAccountSetup({
     return 'default'
   }
 
+  const reconcileAuthSessionAfterSignUp = useCallback(async (): Promise<boolean> => {
+    if (!refreshAuth) {
+      return false
+    }
+
+    const updated = await refreshAuth()
+    return Boolean(updated?.emailConfirmed)
+  }, [refreshAuth])
+
+  const handleRetryAuthSync = useCallback(async () => {
+    if (authSyncRetryInFlightRef.current) {
+      return
+    }
+
+    authSyncRetryInFlightRef.current = true
+    setFormStatus('auth-sync-retrying')
+
+    try {
+      const synced = await reconcileAuthSessionAfterSignUp()
+      setFormStatus(synced ? 'idle' : 'auth-sync-failed')
+    } finally {
+      authSyncRetryInFlightRef.current = false
+    }
+  }, [reconcileAuthSessionAfterSignUp])
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
+
+      if (
+        formStatus === 'auth-sync-failed' ||
+        formStatus === 'auth-sync-retrying' ||
+        formStatus === 'email-confirmation'
+      ) {
+        return
+      }
 
       if (contextLoading || contextError || !contextAllowsAccountCreation) {
         return
@@ -298,13 +332,10 @@ export default function ActivationAccountSetup({
         const result = await signUp(email, password, { emailRedirectTo })
 
         if (result.kind === 'success') {
-          if (refreshAuth) {
-            const updated = await refreshAuth()
-            if (!updated?.emailConfirmed) {
-              setAuthError(AUTH_MESSAGES.networkError)
-              setFormStatus('idle')
-              return
-            }
+          const synced = await reconcileAuthSessionAfterSignUp()
+          if (!synced) {
+            setFormStatus('auth-sync-failed')
+            return
           }
           setFormStatus('idle')
           return
@@ -336,9 +367,10 @@ export default function ActivationAccountSetup({
       contextLoading,
       email,
       emailOk,
+      formStatus,
       matchOk,
       passwordOk,
-      refreshAuth,
+      reconcileAuthSessionAfterSignUp,
       signUp,
     ],
   )
@@ -484,6 +516,75 @@ export default function ActivationAccountSetup({
       <PageShell>
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
           {activatingContent}
+        </div>
+      </PageShell>
+    )
+  }
+
+  if (formStatus === 'auth-sync-failed' || formStatus === 'auth-sync-retrying') {
+    const authSyncRetrying = formStatus === 'auth-sync-retrying'
+    const authSyncContent = (
+      <>
+        {variant === 'page' ? <BrandLockup variant="desktop" /> : null}
+        {accountHeader}
+        <article
+          data-testid="activation-auth-sync-notice"
+          className={
+            variant === 'progressive'
+              ? 'w-full'
+              : 'w-full rounded-2xl border border-white/10 bg-white/[0.045] px-6 py-9 text-center backdrop-blur-xl'
+          }
+        >
+          <p className="text-[15px] leading-relaxed text-white/75">
+            {AUTH_MESSAGES.accountCreatedSignInIncomplete}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-white/60">
+            Check your connection and try again. Your account is already created.
+          </p>
+          <div className="mt-6">
+            <PrimaryButton
+              type="button"
+              enabled={!authSyncRetrying}
+              loading={authSyncRetrying}
+              onClick={() => {
+                void handleRetryAuthSync()
+              }}
+              className="w-full"
+            >
+              {authSyncRetrying ? (
+                <span className="inline-flex items-center gap-2">
+                  <LoadingSpinner />
+                  Signing you in…
+                </span>
+              ) : (
+                'Retry'
+              )}
+            </PrimaryButton>
+          </div>
+          {onSignIn ? (
+            <p className="mt-4 text-center text-sm leading-relaxed text-white/[0.62]">
+              Already signed in elsewhere?{' '}
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="font-semibold text-accent-gold underline underline-offset-2"
+              >
+                Sign in
+              </button>
+            </p>
+          ) : null}
+        </article>
+      </>
+    )
+
+    if (variant === 'progressive') {
+      return <AccountSetupLayout variant={variant}>{authSyncContent}</AccountSetupLayout>
+    }
+
+    return (
+      <PageShell>
+        <div className="my-auto flex w-full max-w-[420px] flex-col items-center">
+          {authSyncContent}
         </div>
       </PageShell>
     )

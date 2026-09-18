@@ -66,6 +66,8 @@ export const AUTH_MESSAGES = {
     'We could not create your account. If you already have one, try signing in.',
   networkError:
     'We could not reach SignMaster right now. Check your connection and try again.',
+  accountCreatedSignInIncomplete:
+    "Your account was created, but we couldn't finish signing you in.",
   passwordResetSent:
     "If an account exists for this email, we've sent a password reset link.",
   passwordResetTemporaryFailure:

@@ -254,7 +254,7 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       expect(refresh).toHaveBeenCalledTimes(1)
     })
 
-    it('shows retryable error when auth refresh fails after confirmed sign-up', async () => {
+    it('shows auth-sync retry UI when refresh fails after signUp SUCCESS (no account form)', async () => {
       const user = userEvent.setup()
       const refresh = vi.fn().mockResolvedValue(null)
       const signUp = vi.fn().mockResolvedValue({
@@ -287,9 +287,129 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
 
       await waitFor(() => {
         expect(refresh).toHaveBeenCalledTimes(1)
-        expect(screen.getByText(AUTH_MESSAGES.networkError)).toBeInTheDocument()
+        expect(screen.getByTestId('activation-auth-sync-notice')).toBeInTheDocument()
+        expect(screen.getByText(AUTH_MESSAGES.accountCreatedSignInIncomplete)).toBeInTheDocument()
       })
-      expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+      expect(signUp).toHaveBeenCalledTimes(1)
+      expect(screen.queryByLabelText('Email Address')).not.toBeInTheDocument()
+    })
+
+    it('auth-sync Retry calls refreshAuth only and reaches claim-ready state on success', async () => {
+      const user = userEvent.setup()
+      let isAuthenticated = false
+      const refresh = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockImplementation(async () => {
+          isAuthenticated = true
+          return {
+            id: '1',
+            email: 'alex@example.invalid',
+            emailConfirmed: true,
+          }
+        })
+      const signUp = vi.fn().mockResolvedValue({
+        kind: 'success',
+        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        session: {
+          user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        },
+      })
+
+      mockUseAuthContext.mockImplementation(() => ({
+        isInitializing: false,
+        isAuthenticated,
+        user: isAuthenticated
+          ? {
+              id: '1',
+              email: 'alex@example.invalid',
+              emailConfirmed: true,
+            }
+          : null,
+        signOut: vi.fn(),
+        refresh,
+      }))
+
+      const view = render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await fillValidAccountForm(user)
+      await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-auth-sync-notice')).toBeInTheDocument()
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+      await waitFor(() => {
+        expect(refresh).toHaveBeenCalledTimes(2)
+      })
+      expect(signUp).toHaveBeenCalledTimes(1)
+
+      view.rerender(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(mockUseActivationClaimWhenReady).toHaveBeenCalledWith(
+          expect.objectContaining({ ready: true }),
+        )
+      })
+      expect(screen.getByTestId('activation-claim-pending')).toBeInTheDocument()
+    })
+
+    it('repeated auth-sync retry failure does not call signUp again', async () => {
+      const user = userEvent.setup()
+      const refresh = vi.fn().mockResolvedValue(null)
+      const signUp = vi.fn().mockResolvedValue({
+        kind: 'success',
+        user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        session: {
+          user: { id: '1', email: 'alex@example.invalid', emailConfirmed: true },
+        },
+      })
+
+      mockUseAuthContext.mockReturnValue({
+        isInitializing: false,
+        isAuthenticated: false,
+        user: null,
+        signOut: vi.fn(),
+        refresh,
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signUp={signUp}
+          buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
+        />,
+      )
+
+      await fillValidAccountForm(user)
+      await user.click(screen.getByRole('button', { name: 'Create Account & Continue' }))
+      await user.click(await screen.findByRole('button', { name: 'Retry' }))
+      await waitFor(() => {
+        expect(refresh).toHaveBeenCalledTimes(2)
+      })
+      await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+      await waitFor(() => {
+        expect(refresh).toHaveBeenCalledTimes(3)
+      })
+      expect(signUp).toHaveBeenCalledTimes(1)
+      expect(screen.queryByLabelText('Email Address')).not.toBeInTheDocument()
     })
 
     it('shows claim SUCCESS continuation UI after confirmed auth', async () => {
