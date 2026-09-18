@@ -204,9 +204,7 @@ describe('ActivationStep1', () => {
     await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     expect(screen.getByLabelText('Amazon order number')).toBeInTheDocument()
-    expect(
-      screen.getByText(/Find it in your Amazon confirmation email or order details/i),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Where do I find this?')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
     expect(screen.queryByText(/Returns & Orders/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/postcode/i)).not.toBeInTheDocument()
@@ -1470,6 +1468,63 @@ describe('ActivationStep1', () => {
       expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
     })
 
+    it('auto-verifies once when Paste reads a valid clipboard Order ID', async () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(VALID_ORDER_ID_DIGITS),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      mockCreateActivationContext.mockResolvedValue({ kind: 'created' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByLabelText('Amazon order number')).toHaveValue(VALID_ORDER_ID)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+      vi.unstubAllGlobals()
+    })
+
+    it('does not auto-verify when Paste reads an overlong clipboard source', async () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(`${VALID_ORDER_ID_DIGITS}99`),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByLabelText('Amazon order number')).toHaveValue(VALID_ORDER_ID)
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+      expect(mockCreateActivationContext).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
+
     it('normalizes surrounding text, spaces and dashes then auto-verifies the canonical value', async () => {
       vi.useFakeTimers()
       const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
@@ -1633,6 +1688,82 @@ describe('ActivationStep1', () => {
       await advanceDebounce(500)
 
       expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('blocks manual submit after native paste with an overlong raw source', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}999` : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check my order' }))
+        await Promise.resolve()
+      })
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+      expect(mockCreateActivationContext).not.toHaveBeenCalled()
+    })
+
+    it('blocks manual submit after clipboard Paste with an overlong raw source', async () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(`${VALID_ORDER_ID_DIGITS}999`),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByLabelText('Amazon order number')).toHaveValue(VALID_ORDER_ID)
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check my order' }))
+        await Promise.resolve()
+      })
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+      expect(mockCreateActivationContext).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
+
+    it('allows manual submit for a normal exact 17-digit entry', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      const submit = screen.getByRole('button', { name: 'Check my order' })
+      expect(submit).toBeEnabled()
+
+      await act(async () => {
+        fireEvent.click(submit)
+        await Promise.resolve()
+      })
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
     })
 
     it('does not auto-verify when extra digits follow a valid ID separated by spaces', async () => {

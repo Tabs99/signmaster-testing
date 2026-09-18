@@ -1,4 +1,26 @@
+import { isExactSeventeenDigitSource, isOrderIdRawSourceWithinLimit } from './validation'
+
 const MAX_ORDER_ID_DIGITS = 17
+
+export type ProcessedOrderIdInput = {
+  value: string
+  autoVerifyEligible: boolean
+  sourceWithinDigitLimit: boolean
+}
+
+/** Single path for keyboard, paste, and clipboard button input. */
+export function processOrderIdInput(
+  raw: string,
+  options: { trim?: boolean } = {},
+): ProcessedOrderIdInput {
+  const autoVerifyEligible = isExactSeventeenDigitSource(raw)
+  const source = options.trim ? raw.trim() : raw
+  return {
+    value: formatOrderId(source),
+    autoVerifyEligible,
+    sourceWithinDigitLimit: isOrderIdRawSourceWithinLimit(raw),
+  }
+}
 
 export function formatOrderId(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, MAX_ORDER_ID_DIGITS)
@@ -15,7 +37,15 @@ export function formatOrderId(raw: string): string {
 }
 
 export function normalisePastedOrderId(raw: string): string {
-  return formatOrderId(raw.trim())
+  return processOrderIdInput(raw, { trim: true }).value
+}
+
+export function isClipboardPasteSupported(): boolean {
+  return (
+    typeof globalThis.navigator !== 'undefined' &&
+    globalThis.isSecureContext === true &&
+    typeof globalThis.navigator.clipboard?.readText === 'function'
+  )
 }
 
 export function countDigitsBeforeIndex(formatted: string, index: number): number {

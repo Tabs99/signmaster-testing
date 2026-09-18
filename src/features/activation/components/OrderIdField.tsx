@@ -1,21 +1,22 @@
-import { useId, useRef, type KeyboardEvent } from 'react'
+import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import {
   countOrderIdDigits,
-  isExactSeventeenDigitSource,
   isValidOrderId,
   validateOrderId,
 } from '../utils/validation'
 import {
   countDigitsBeforeIndex,
   cursorPositionAfterDigits,
-  formatOrderId,
   insertOrderIdDigit,
-  normalisePastedOrderId,
+  isClipboardPasteSupported,
+  processOrderIdInput,
 } from '../utils/formatting'
 import FieldError from './FieldError'
+import OrderIdInlineHelp from './OrderIdInlineHelp'
 
 export type OrderIdFieldChangeMeta = {
   autoVerifyEligible: boolean
+  sourceWithinDigitLimit: boolean
 }
 
 interface OrderIdFieldProps {
@@ -23,6 +24,7 @@ interface OrderIdFieldProps {
   onChange: (value: string, meta: OrderIdFieldChangeMeta) => void
   onOpenHelp: () => void
   showError: boolean
+  errorMessageOverride?: string | null
   disabled?: boolean
   inputRef?: React.RefObject<HTMLInputElement | null>
   helpButtonRef?: React.RefObject<HTMLButtonElement | null>
@@ -34,6 +36,7 @@ export default function OrderIdField({
   onChange,
   onOpenHelp,
   showError,
+  errorMessageOverride = null,
   disabled = false,
   inputRef,
   helpButtonRef,
@@ -41,13 +44,46 @@ export default function OrderIdField({
 }: OrderIdFieldProps) {
   const hintId = useId()
   const errorId = useId()
+  const clipboardNoticeId = useId()
   const valueRef = useRef(value)
   valueRef.current = value
+  const [clipboardNotice, setClipboardNotice] = useState<string | null>(null)
+  const showPasteButton = isClipboardPasteSupported()
   const digitCount = countOrderIdDigits(value)
   const isValid = isValidOrderId(value)
-  const errorMessage = showError ? validateOrderId(value) : null
+  const errorMessage = showError
+    ? (errorMessageOverride ?? validateOrderId(value))
+    : null
 
   const counterLabel = isValid ? '17/17 digits' : `${digitCount}/17 digits`
+
+  function applyRawInput(raw: string, options: { trim?: boolean }) {
+    setClipboardNotice(null)
+    const processed = processOrderIdInput(raw, options)
+    onChange(processed.value, {
+      autoVerifyEligible: processed.autoVerifyEligible,
+      sourceWithinDigitLimit: processed.sourceWithinDigitLimit,
+    })
+  }
+
+  async function handlePasteFromClipboard() {
+    if (disabled || !showPasteButton) {
+      return
+    }
+
+    setClipboardNotice(null)
+
+    try {
+      const text = await navigator.clipboard.readText()
+      applyRawInput(text, { trim: true })
+      inputRef?.current?.focus()
+    } catch {
+      setClipboardNotice(
+        "Couldn't read your clipboard. You can still paste with Ctrl+V or Cmd+V in the field.",
+      )
+      inputRef?.current?.focus()
+    }
+  }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (disabled || !event.repeat || !/^\d$/.test(event.key)) {
@@ -74,9 +110,7 @@ export default function OrderIdField({
     }
 
     valueRef.current = nextValue
-    onChange(nextValue, {
-      autoVerifyEligible: isExactSeventeenDigitSource(nextValue),
-    })
+    applyRawInput(nextValue, { trim: false })
 
     const insertedDigitIndex = countDigitsBeforeIndex(currentValue, selectionStart) + 1
     const nextCaret = cursorPositionAfterDigits(nextValue, insertedDigitIndex)
@@ -85,6 +119,14 @@ export default function OrderIdField({
       input.setSelectionRange(nextCaret, nextCaret)
     })
   }
+
+  const describedBy = [
+    errorMessage ? errorId : null,
+    clipboardNotice ? clipboardNoticeId : null,
+    hintId,
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div>
@@ -105,52 +147,66 @@ export default function OrderIdField({
         </span>
       </div>
 
-      <input
-        ref={inputRef}
-        id="amazon-order-number"
-        name="orderId"
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        spellCheck={false}
-        value={value}
-        disabled={disabled}
-        aria-disabled={disabled}
-        aria-invalid={showError && Boolean(errorMessage)}
-        aria-describedby={[errorMessage ? errorId : null, hintId].filter(Boolean).join(' ') || undefined}
-        onChange={(event) => {
-          const raw = event.target.value
-          onChange(formatOrderId(raw), {
-            autoVerifyEligible: isExactSeventeenDigitSource(raw),
-          })
-        }}
-        onKeyDown={handleKeyDown}
-        onPaste={(event) => {
-          event.preventDefault()
-          const pasted = event.clipboardData.getData('text')
-          onChange(normalisePastedOrderId(pasted), {
-            autoVerifyEligible: isExactSeventeenDigitSource(pasted),
-          })
-        }}
-        onBlur={onBlur}
-        className={`keyline-field keyline-focus w-full ${
-          showError && errorMessage ? 'keyline-field-error' : 'border-white/20'
-        }`}
-      />
+      <div className="flex gap-2">
+        <input
+          ref={inputRef}
+          id="amazon-order-number"
+          name="orderId"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          disabled={disabled}
+          aria-disabled={disabled}
+          aria-invalid={showError && Boolean(errorMessage)}
+          aria-describedby={describedBy || undefined}
+          onChange={(event) => {
+            applyRawInput(event.target.value, { trim: false })
+          }}
+          onKeyDown={handleKeyDown}
+          onPaste={(event) => {
+            event.preventDefault()
+            applyRawInput(event.clipboardData.getData('text'), { trim: true })
+          }}
+          onBlur={onBlur}
+          className={`keyline-field keyline-focus min-w-0 flex-1 ${
+            showError && errorMessage ? 'keyline-field-error' : 'border-white/20'
+          }`}
+        />
+        {showPasteButton ? (
+          <button
+            type="button"
+            disabled={disabled}
+            aria-disabled={disabled}
+            onClick={() => {
+              void handlePasteFromClipboard()
+            }}
+            className="keyline-focus shrink-0 rounded-xl border border-white/20 bg-white/[0.06] px-3.5 py-3 text-[14px] font-semibold text-white transition-colors hover:border-white/30 hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Paste
+          </button>
+        ) : null}
+      </div>
 
       {errorMessage ? <FieldError id={errorId}>{errorMessage}</FieldError> : null}
 
-      <p id={hintId} className="mt-2.5 text-[13px] leading-[1.55] text-white/[0.55]">
-        Find it in your Amazon confirmation email or order details.{' '}
-        <button
-          ref={helpButtonRef}
-          type="button"
-          onClick={onOpenHelp}
-          className="keyline-text-action inline min-h-0 p-0 text-[13px] font-medium text-white underline decoration-white/45"
+      {clipboardNotice ? (
+        <p
+          id={clipboardNoticeId}
+          role="status"
+          className="mt-2 text-[13px] leading-snug text-amber-300/90"
         >
-          Show me where
-        </button>
-      </p>
+          {clipboardNotice}
+        </p>
+      ) : null}
+
+      <div id={hintId}>
+        <OrderIdInlineHelp
+          onOpenDetailedHelp={onOpenHelp}
+          detailedHelpButtonRef={helpButtonRef}
+        />
+      </div>
     </div>
   )
 }

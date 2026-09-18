@@ -78,6 +78,25 @@ test.describe('SignMaster keyboard accessibility', () => {
     await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
   })
 
+  test('Order ID inline help opens from the keyboard without submitting verification', async ({
+    page,
+  }) => {
+    await mockSupabaseAuthBootstrap(page)
+    let verifyCalls = 0
+    await page.route('**/api/activation/verify', async (route) => {
+      verifyCalls += 1
+      await route.continue()
+    })
+
+    await page.goto('/activate')
+
+    const summary = page.locator('summary', { hasText: 'Where do I find this?' })
+    await summary.focus()
+    await page.keyboard.press('Space')
+    await expect(page.locator('details[open]')).toContainText('123-1234567-1234567')
+    expect(verifyCalls).toBe(0)
+  })
+
   test('activation order entry is submittable with the keyboard only', async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
     await mockStatefulActivationContext(page)

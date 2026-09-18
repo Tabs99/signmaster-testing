@@ -19,7 +19,10 @@ import {
   deferActivationEntryResume,
   isActivationEntryDeferred,
 } from '../utils/progressiveActivationSession'
-import { isValidOrderId } from '../utils/validation'
+import {
+  isValidOrderId,
+  VALIDATION_MESSAGES,
+} from '../utils/validation'
 
 /**
  * Trailing debounce before auto-verifying a complete, structurally valid Order
@@ -62,6 +65,7 @@ export default function ActivationStep1({
   const [orderId, setOrderId] = useState('')
   const [accountSetupUnlocked, setAccountSetupUnlocked] = useState(false)
   const [autoVerifyEligible, setAutoVerifyEligible] = useState(false)
+  const [orderIdSourceWithinLimit, setOrderIdSourceWithinLimit] = useState(true)
   const [fieldTouched, setFieldTouched] = useState(false)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [phase, setPhase] = useState<ActivationUiPhase>('entry')
@@ -83,9 +87,14 @@ export default function ActivationStep1({
       (resolvedContextStatus === 'VALID' && !isActivationEntryDeferred()))
 
   const orderIdValid = isValidOrderId(orderId)
-  const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdValid
+  const orderIdSubmittable = orderIdValid && orderIdSourceWithinLimit
+  const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdSubmittable
+  const orderIdErrorOverride =
+    showOrderIdError && orderIdValid && !orderIdSourceWithinLimit
+      ? VALIDATION_MESSAGES.orderIdRawTooLong
+      : null
   const isChecking = phase === 'checking'
-  const canSubmit = orderIdValid && !isChecking
+  const canSubmit = orderIdSubmittable && !isChecking
 
   useEffect(() => {
     if (resultKind !== 'rate_limited' || rateLimitRetryAt === null) {
@@ -155,7 +164,7 @@ export default function ActivationStep1({
     if (
       phase !== 'entry' ||
       contextResolving ||
-      !orderIdValid ||
+      !orderIdSubmittable ||
       !autoVerifyEligible ||
       verifyInFlightRef.current ||
       orderId === lastRequestedOrderIdRef.current
@@ -168,7 +177,14 @@ export default function ActivationStep1({
     }, AUTO_VERIFY_DEBOUNCE_MS)
 
     return () => globalThis.clearTimeout(timeoutId)
-  }, [orderId, orderIdValid, autoVerifyEligible, contextResolving, phase, runVerification])
+  }, [
+    orderId,
+    orderIdSubmittable,
+    autoVerifyEligible,
+    contextResolving,
+    phase,
+    runVerification,
+  ])
 
   // Resume the progressive account step after refresh/navigation when a valid
   // HttpOnly activation context already exists (direct /activate return visits).
@@ -227,8 +243,8 @@ export default function ActivationStep1({
     setSubmitAttempted(true)
     setFieldTouched(true)
 
-    if (!orderIdValid || isChecking || contextResolving) {
-      if (!orderIdValid) {
+    if (!orderIdSubmittable || isChecking || contextResolving) {
+      if (!orderIdSubmittable) {
         orderIdRef.current?.focus()
       }
       return
@@ -241,6 +257,7 @@ export default function ActivationStep1({
     if (options?.clearOrderId) {
       setOrderId('')
       setAutoVerifyEligible(false)
+      setOrderIdSourceWithinLimit(true)
     }
     setAccountSetupUnlocked(false)
     eligibleContextCreateStartedRef.current = false
@@ -503,11 +520,13 @@ export default function ActivationStep1({
                 onChange={(value, meta) => {
                   setOrderId(value)
                   setAutoVerifyEligible(meta.autoVerifyEligible)
+                  setOrderIdSourceWithinLimit(meta.sourceWithinDigitLimit)
                 }}
                 onOpenHelp={() =>
                   openHelp(0, showMeWhereRef.current, 'Finding your Amazon order number')
                 }
                 showError={showOrderIdError}
+                errorMessageOverride={orderIdErrorOverride}
                 disabled={isChecking}
                 inputRef={orderIdRef}
                 helpButtonRef={showMeWhereRef}

@@ -1,9 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mockSupabaseAuthBootstrap, seedConfirmedSession } from './helpers/supabaseMock'
-import { mockStatefulActivationContext } from './helpers/progressiveActivation'
+import {
+  expectProgressiveAccountSetupOnActivate,
+  mockStatefulActivationContext,
+} from './helpers/progressiveActivation'
+import { mockClipboardReadText } from './helpers/orderIdClipboard'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
-const FIXTURE_ORDER_DIGITS = '2051234567123456' // formatting-agnostic substring guard
+const FIXTURE_ORDER_DIGITS = '2051234567123456' // formatting-agnostic substring guard (16 digits)
+const FIXTURE_ORDER_ID_RAW_17 = '20512345671234567'
 const CONTEXT_COOKIE_NAME = 'sm_activation_ctx'
 const CONTEXT_TOKEN_VALUE = 'opaque-privacy-test-token'
 const APP_EMAIL = 'privacy-e2e-fixture@example.invalid'
@@ -112,6 +117,27 @@ test.describe('SignMaster privacy & security browser audit', () => {
     // The HttpOnly activation-context token is not readable by JavaScript.
     expect(storage.cookie).not.toContain(CONTEXT_COOKIE_NAME)
     expect(storage.cookie).not.toContain(CONTEXT_TOKEN_VALUE)
+  })
+
+  test('Paste button path does not persist Order ID in browser storage or URL', async ({
+    page,
+  }) => {
+    await mockSupabaseAuthBootstrap(page)
+    await mockVerifyEligible(page)
+    await mockStatefulActivationContext(page)
+    await mockClipboardReadText(page, FIXTURE_ORDER_ID_RAW_17)
+
+    await page.goto('/activate')
+    await page.getByRole('button', { name: 'Paste' }).click()
+    await expect(page.getByLabel('Amazon order number')).toHaveValue(FIXTURE_ORDER_ID)
+    await expectProgressiveAccountSetupOnActivate(page)
+
+    const storage = await readBrowserStorage(page)
+    expect(storage.url).not.toContain(FIXTURE_ORDER_ID)
+    expect(storage.url).not.toContain(FIXTURE_ORDER_DIGITS)
+    const allValues = [...storage.local, ...storage.session].map(([, value]) => value).join('\n')
+    expect(allValues).not.toContain(FIXTURE_ORDER_ID)
+    expect(allValues).not.toContain(FIXTURE_ORDER_DIGITS)
   })
 
   test('entitlement check sends only the bearer token — no user id in the URL or body', async ({
