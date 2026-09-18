@@ -9,6 +9,11 @@ Supabase (PostgreSQL + Auth) database. Amazon Selling Partner API access is **se
 and is never called during customer activation.
 
 - **Production URL:** https://signmastercards.co.uk
+- **Physical product activation URL:** inserts and cards in SignMaster packs direct customers to
+  `https://signmastercards.co.uk/activate` — a fixed, query-free public entry point (no Amazon Order
+  ID, user identity, token, entitlement, or per-pack identifier in the URL). Purchase verification
+  happens server-side after the customer enters their Amazon Order ID. `/activate` is
+  backwards-compatible; do not rename or remove it without a permanent redirect.
 - **Deep architecture reference:** [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Manual auth/activation acceptance pack:** [`docs/manual-auth-activation-acceptance.md`](./docs/manual-auth-activation-acceptance.md)
 - **Pre-production checklist:** [`PRE_PRODUCTION_CHECKLIST.md`](./PRE_PRODUCTION_CHECKLIST.md)

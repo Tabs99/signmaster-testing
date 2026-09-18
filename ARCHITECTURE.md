@@ -404,6 +404,13 @@ Customer scans QR code on product packaging
   → returns activation status to frontend
 ```
 
+**Physical product activation URL:** SignMaster pack inserts and cards direct customers to the
+permanent public URL **`https://signmastercards.co.uk/activate`** — no query parameters, Amazon
+Order ID, user identity, activation token, entitlement data, or per-pack identifier in the link.
+Purchase eligibility is verified **server-side** after the customer enters their Amazon Order ID.
+`/activate` is a backwards-compatible public entry point and must not be renamed or removed without
+a permanent redirect.
+
 **Per-item retained quantity** (building block):
 
 ```
