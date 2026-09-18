@@ -1,19 +1,30 @@
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 
+const socialButtonClassName = (isInteractive: boolean, loading: boolean) =>
+  `keyline-focus flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-white/[0.06] px-4 py-3.5 text-[15px] font-bold text-white transition-colors ${
+    isInteractive
+      ? 'hover:border-white/30 hover:bg-white/[0.09]'
+      : 'cursor-not-allowed opacity-60'
+  } ${loading ? 'cursor-wait' : ''}`
+
 export interface SocialAuthOptionsProps {
   onGoogleClick: () => void
-  loading?: boolean
+  onAppleClick: () => void
+  googleLoading?: boolean
+  appleLoading?: boolean
   disabled?: boolean
   error?: string | null
 }
 
 export default function SocialAuthOptions({
   onGoogleClick,
-  loading = false,
+  onAppleClick,
+  googleLoading = false,
+  appleLoading = false,
   disabled = false,
   error = null,
 }: SocialAuthOptionsProps) {
-  const isInteractive = !loading && !disabled
+  const blocked = disabled || googleLoading || appleLoading
 
   return (
     <div className="flex flex-col gap-[18px]" data-testid="social-auth-options">
@@ -37,22 +48,36 @@ export default function SocialAuthOptions({
       <button
         type="button"
         onClick={onGoogleClick}
-        disabled={!isInteractive}
-        aria-disabled={!isInteractive}
-        aria-busy={loading || undefined}
-        className={`keyline-focus flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/20 bg-white/[0.06] px-4 py-3.5 text-[15px] font-bold text-white transition-colors ${
-          isInteractive
-            ? 'hover:border-white/30 hover:bg-white/[0.09]'
-            : 'cursor-not-allowed opacity-60'
-        } ${loading ? 'cursor-wait' : ''}`}
+        disabled={blocked}
+        aria-disabled={blocked}
+        aria-busy={googleLoading || undefined}
+        className={socialButtonClassName(!blocked, googleLoading)}
       >
-        {loading ? (
+        {googleLoading ? (
           <>
             <LoadingSpinner />
             <span>Connecting to Google…</span>
           </>
         ) : (
           'Continue with Google'
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={onAppleClick}
+        disabled={blocked}
+        aria-disabled={blocked}
+        aria-busy={appleLoading || undefined}
+        className={socialButtonClassName(!blocked, appleLoading)}
+      >
+        {appleLoading ? (
+          <>
+            <LoadingSpinner />
+            <span>Connecting to Apple…</span>
+          </>
+        ) : (
+          'Continue with Apple'
         )}
       </button>
     </div>

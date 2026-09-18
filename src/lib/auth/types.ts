@@ -31,9 +31,14 @@ export type SignInResult =
   | { kind: 'error'; error: SafeAuthError }
 
 /** Supabase OAuth redirect flow — browser navigates away on success. */
-export type GoogleSignInResult =
+export type OAuthRedirectResult =
   | { kind: 'redirect_initiated' }
   | { kind: 'error'; error: SafeAuthError }
+
+/** @deprecated Prefer OAuthRedirectResult — kept for CP5 call sites. */
+export type GoogleSignInResult = OAuthRedirectResult
+
+export type AppleSignInResult = OAuthRedirectResult
 
 /**
  * Result of requesting a password-reset email. Account existence is never

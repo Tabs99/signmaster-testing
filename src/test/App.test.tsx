@@ -10,6 +10,7 @@ vi.mock('../lib/auth/authService', () => ({
     signUp: vi.fn(),
     signIn: vi.fn(),
     signInWithGoogle: vi.fn(),
+    signInWithApple: vi.fn(),
     requestPasswordReset: vi.fn(),
     updatePassword: vi.fn(),
     getCurrentUser: vi.fn(),

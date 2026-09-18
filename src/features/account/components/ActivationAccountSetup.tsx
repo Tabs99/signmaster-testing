@@ -14,6 +14,7 @@ import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import { authService } from '../../../lib/auth/authService'
+import { useAppleSignIn } from '../hooks/useAppleSignIn'
 import { useGoogleSignIn } from '../hooks/useGoogleSignIn'
 import SocialAuthOptions from './SocialAuthOptions'
 import { buildConfirmationContinuationRedirect } from '../../../lib/activation/confirmationRedirect'
@@ -145,6 +146,7 @@ export default function ActivationAccountSetup({
   activationContextResolution,
   signUp = authService.signUp.bind(authService),
   signInWithGoogle = authService.signInWithGoogle.bind(authService),
+  signInWithApple = authService.signInWithApple.bind(authService),
   buildConfirmationRedirect = buildConfirmationContinuationRedirect,
   onSignIn,
   onRestartActivation,
@@ -406,12 +408,20 @@ export default function ActivationAccountSetup({
 
   const isLoading = formStatus === 'loading'
   const contextResolutionBlocked = contextLoading || contextError
+  const socialOAuthInFlightRef = useRef(false)
   const googleSignInEnabled =
     !contextResolutionBlocked && contextAllowsAccountCreation && formStatus === 'idle' && !isLoading
   const { handleGoogleSignIn, googleLoading, googleError } = useGoogleSignIn({
     signInWithGoogle,
     enabled: googleSignInEnabled,
+    inFlightRef: socialOAuthInFlightRef,
   })
+  const { handleAppleSignIn, appleLoading, appleError } = useAppleSignIn({
+    signInWithApple,
+    enabled: googleSignInEnabled,
+    inFlightRef: socialOAuthInFlightRef,
+  })
+  const socialOAuthError = googleError ?? appleError
   const canSubmit =
     emailOk &&
     passwordOk &&
@@ -829,9 +839,13 @@ export default function ActivationAccountSetup({
               onGoogleClick={() => {
                 void handleGoogleSignIn()
               }}
-              loading={googleLoading}
+              onAppleClick={() => {
+                void handleAppleSignIn()
+              }}
+              googleLoading={googleLoading}
+              appleLoading={appleLoading}
               disabled={!googleSignInEnabled}
-              error={googleError}
+              error={socialOAuthError}
             />
 
             <p className="mt-1 text-center text-sm leading-relaxed text-white/[0.62]">

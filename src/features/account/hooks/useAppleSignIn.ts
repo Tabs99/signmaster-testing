@@ -2,30 +2,30 @@ import type { MutableRefObject } from 'react'
 import { authService, type AuthService } from '../../../lib/auth/authService'
 import { useOAuthSignIn } from './useOAuthSignIn'
 
-export interface UseGoogleSignInOptions {
-  signInWithGoogle?: AuthService['signInWithGoogle']
+export interface UseAppleSignInOptions {
+  signInWithApple?: AuthService['signInWithApple']
   buildReturnUrl?: () => string
   enabled?: boolean
   inFlightRef?: MutableRefObject<boolean>
 }
 
-export function useGoogleSignIn({
-  signInWithGoogle = authService.signInWithGoogle.bind(authService),
+export function useAppleSignIn({
+  signInWithApple = authService.signInWithApple.bind(authService),
   buildReturnUrl,
   enabled = true,
   inFlightRef,
-}: UseGoogleSignInOptions = {}) {
+}: UseAppleSignInOptions = {}) {
   const oauth = useOAuthSignIn({
-    signIn: signInWithGoogle,
+    signIn: signInWithApple,
     buildReturnUrl,
     enabled,
     inFlightRef,
   })
 
   return {
-    handleGoogleSignIn: oauth.handleSignIn,
-    googleLoading: oauth.loading,
-    googleError: oauth.error,
-    clearGoogleError: oauth.clearError,
+    handleAppleSignIn: oauth.handleSignIn,
+    appleLoading: oauth.loading,
+    appleError: oauth.error,
+    clearAppleError: oauth.clearError,
   }
 }

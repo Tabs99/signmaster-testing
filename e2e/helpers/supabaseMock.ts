@@ -309,14 +309,24 @@ function buildOAuthReturnHash(email: string): string {
   return `#${params.toString()}`
 }
 
-export async function mockGoogleOAuthAuthorizeReturn(
+export async function mockOAuthAuthorizeReturn(
   page: Page,
   email: string,
-  options: { fail?: boolean; onAuthorize?: (redirectTo: string) => void } = {},
+  options: {
+    provider?: 'google' | 'apple'
+    fail?: boolean
+    onAuthorize?: (redirectTo: string) => void
+  } = {},
 ) {
   await page.route('**/auth/v1/authorize**', async (route) => {
+    const requestUrl = new URL(route.request().url())
+    const routeProvider = requestUrl.searchParams.get('provider')
+    if (options.provider && routeProvider !== options.provider) {
+      await route.continue()
+      return
+    }
+
     if (options.fail) {
-      const requestUrl = new URL(route.request().url())
       const redirectTo = requestUrl.searchParams.get('redirect_to') ?? '/activate'
 
       if (route.request().resourceType() === 'document') {
@@ -338,7 +348,6 @@ export async function mockGoogleOAuthAuthorizeReturn(
       return
     }
 
-    const requestUrl = new URL(route.request().url())
     const redirectTo = requestUrl.searchParams.get('redirect_to') ?? '/sign-in'
     options.onAuthorize?.(redirectTo)
 
@@ -359,6 +368,22 @@ export async function mockGoogleOAuthAuthorizeReturn(
       body: JSON.stringify({ url: returnUrl }),
     })
   })
+}
+
+export async function mockGoogleOAuthAuthorizeReturn(
+  page: Page,
+  email: string,
+  options: { fail?: boolean; onAuthorize?: (redirectTo: string) => void } = {},
+) {
+  return mockOAuthAuthorizeReturn(page, email, { ...options, provider: 'google' })
+}
+
+export async function mockAppleOAuthAuthorizeReturn(
+  page: Page,
+  email: string,
+  options: { fail?: boolean; onAuthorize?: (redirectTo: string) => void } = {},
+) {
+  return mockOAuthAuthorizeReturn(page, email, { ...options, provider: 'apple' })
 }
 
 export async function mockSupabaseAuthenticatedUser(page: Page, email: string) {

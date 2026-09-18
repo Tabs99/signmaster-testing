@@ -10,16 +10,23 @@ import { buildOAuthReturnUrl } from './oauthRedirect'
 import type {
   AuthSessionInfo,
   AuthUser,
-  GoogleSignInResult,
+  OAuthRedirectResult,
   PasswordResetRequestResult,
   PasswordUpdateResult,
   SignInResult,
   SignUpResult,
 } from './types'
 
-export interface GoogleSignInOptions {
+export interface OAuthSignInOptions {
   redirectTo?: string
 }
+
+/** @deprecated Prefer OAuthSignInOptions */
+export type GoogleSignInOptions = OAuthSignInOptions
+
+export type AppleSignInOptions = OAuthSignInOptions
+
+type SupportedOAuthProvider = 'google' | 'apple'
 
 export interface SignUpOptions {
   /**
@@ -46,7 +53,8 @@ export interface AuthService {
     options?: SignUpOptions,
   ): Promise<SignUpResult>
   signIn(email: string, password: string): Promise<SignInResult>
-  signInWithGoogle(options?: GoogleSignInOptions): Promise<GoogleSignInResult>
+  signInWithGoogle(options?: OAuthSignInOptions): Promise<OAuthRedirectResult>
+  signInWithApple(options?: OAuthSignInOptions): Promise<OAuthRedirectResult>
   requestPasswordReset(
     email: string,
     options?: RequestPasswordResetOptions,
@@ -72,6 +80,35 @@ function mapUser(user: User): AuthUser {
 function mapSession(user: User): AuthSessionInfo {
   return {
     user: mapUser(user),
+  }
+}
+
+async function signInWithOAuthProvider(
+  deps: AuthServiceDeps,
+  provider: SupportedOAuthProvider,
+  options?: OAuthSignInOptions,
+): Promise<OAuthRedirectResult> {
+  try {
+    const client = deps.getClient()
+    const redirectTo = options?.redirectTo ?? buildOAuthReturnUrl()
+    const { error } = await client.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo },
+    })
+
+    if (error) {
+      return {
+        kind: 'error',
+        error: mapAuthError(error),
+      }
+    }
+
+    return { kind: 'redirect_initiated' }
+  } catch (error) {
+    return {
+      kind: 'error',
+      error: mapAuthError(error),
+    }
   }
 }
 
@@ -138,28 +175,11 @@ export function createAuthService(
     },
 
     async signInWithGoogle(options) {
-      try {
-        const client = deps.getClient()
-        const redirectTo = options?.redirectTo ?? buildOAuthReturnUrl()
-        const { error } = await client.auth.signInWithOAuth({
-          provider: 'google',
-          options: { redirectTo },
-        })
+      return signInWithOAuthProvider(deps, 'google', options)
+    },
 
-        if (error) {
-          return {
-            kind: 'error',
-            error: mapAuthError(error),
-          }
-        }
-
-        return { kind: 'redirect_initiated' }
-      } catch (error) {
-        return {
-          kind: 'error',
-          error: mapAuthError(error),
-        }
-      }
+    async signInWithApple(options) {
+      return signInWithOAuthProvider(deps, 'apple', options)
     },
 
     async signIn(email, password) {

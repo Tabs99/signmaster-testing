@@ -222,6 +222,53 @@ describe('authService', () => {
     })
   })
 
+  describe('signInWithApple', () => {
+    it('calls Supabase OAuth with provider apple and a safe redirect URL', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockResolvedValue({ data: { url: 'https://oauth.test' }, error: null })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithApple({
+        redirectTo: 'http://localhost:4200/sign-in',
+      })
+
+      expect(result).toEqual({ kind: 'redirect_initiated' })
+      expect(client.auth.signInWithOAuth).toHaveBeenCalledWith({
+        provider: 'apple',
+        options: { redirectTo: 'http://localhost:4200/sign-in' },
+      })
+    })
+
+    it('maps OAuth initiation failures to safe auth errors', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockResolvedValue({
+        data: { url: null },
+        error: { message: 'Apple provider misconfigured' },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithApple()
+
+      expect(result.kind).toBe('error')
+      if (result.kind === 'error') {
+        expect(result.error.message).not.toContain('misconfigured')
+      }
+    })
+
+    it('maps network failures to the standard network error message', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithApple()
+
+      expect(result.kind).toBe('error')
+      if (result.kind === 'error') {
+        expect(result.error.code).toBe('network_error')
+      }
+    })
+  })
+
   describe('requestPasswordReset', () => {
     it('returns sent and forwards the redirect URL on success', async () => {
       const client = createMockClient()

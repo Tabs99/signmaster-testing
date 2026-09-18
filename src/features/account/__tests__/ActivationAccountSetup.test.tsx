@@ -1028,7 +1028,7 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
   })
 
   describe('Google OAuth (CP5)', () => {
-    it('shows Continue with Google when activation context is VALID', async () => {
+    it('shows Continue with Google and Apple when activation context is VALID', async () => {
       render(
         <ActivationAccountSetup
           variant="progressive"
@@ -1037,6 +1037,7 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       )
 
       expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeInTheDocument()
       expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
     })
 
@@ -1112,6 +1113,7 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
     it('does not start Google OAuth when activation context is EXPIRED', async () => {
       const user = userEvent.setup()
       const signInWithGoogle = vi.fn()
+      const signInWithApple = vi.fn()
       mockResolveActivationContext.mockResolvedValue({
         kind: 'status',
         status: 'EXPIRED',
@@ -1121,6 +1123,7 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
         <ActivationAccountSetup
           variant="progressive"
           signInWithGoogle={signInWithGoogle}
+          signInWithApple={signInWithApple}
           signUp={vi.fn()}
           buildConfirmationRedirect={async () => 'http://localhost/activation/continue'}
         />,
@@ -1131,14 +1134,19 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       })
 
       const googleButton = screen.getByRole('button', { name: 'Continue with Google' })
+      const appleButton = screen.getByRole('button', { name: 'Continue with Apple' })
       expect(googleButton).toBeDisabled()
+      expect(appleButton).toBeDisabled()
       await user.click(googleButton)
+      await user.click(appleButton)
       expect(signInWithGoogle).not.toHaveBeenCalled()
+      expect(signInWithApple).not.toHaveBeenCalled()
     })
 
     it('does not start Google OAuth when activation context is NONE', async () => {
       const user = userEvent.setup()
       const signInWithGoogle = vi.fn()
+      const signInWithApple = vi.fn()
       mockResolveActivationContext.mockResolvedValue({
         kind: 'status',
         status: 'NONE',
@@ -1148,6 +1156,7 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
         <ActivationAccountSetup
           variant="progressive"
           signInWithGoogle={signInWithGoogle}
+          signInWithApple={signInWithApple}
           signUp={vi.fn()}
         />,
       )
@@ -1157,9 +1166,13 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       })
 
       const googleButton = screen.getByRole('button', { name: 'Continue with Google' })
+      const appleButton = screen.getByRole('button', { name: 'Continue with Apple' })
       expect(googleButton).toBeDisabled()
+      expect(appleButton).toBeDisabled()
       await user.click(googleButton)
+      await user.click(appleButton)
       expect(signInWithGoogle).not.toHaveBeenCalled()
+      expect(signInWithApple).not.toHaveBeenCalled()
     })
 
     it('does not arm claim when Google-authenticated user has EXPIRED context', async () => {
@@ -1222,6 +1235,165 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
       expect(
         mockUseActivationClaimWhenReady.mock.calls.some((call) => call[0]?.ready === true),
       ).toBe(false)
+    })
+  })
+
+  describe('Apple OAuth (CP6)', () => {
+    it.each([
+      {
+        pending: 'Continue with Google',
+        other: 'Continue with Apple',
+        pendingMock: 'signInWithGoogle' as const,
+        otherMock: 'signInWithApple' as const,
+      },
+      {
+        pending: 'Continue with Apple',
+        other: 'Continue with Google',
+        pendingMock: 'signInWithApple' as const,
+        otherMock: 'signInWithGoogle' as const,
+      },
+    ])(
+      'does not start $other while $pending OAuth initiation is in flight',
+      async ({ pending, other, pendingMock }) => {
+        let resolvePending!: () => void
+        const signInWithGoogle = vi.fn()
+        const signInWithApple = vi.fn()
+
+        if (pendingMock === 'signInWithGoogle') {
+          signInWithGoogle.mockImplementation(
+            () =>
+              new Promise<{ kind: 'redirect_initiated' }>((resolve) => {
+                resolvePending = () => resolve({ kind: 'redirect_initiated' })
+              }),
+          )
+        } else {
+          signInWithApple.mockImplementation(
+            () =>
+              new Promise<{ kind: 'redirect_initiated' }>((resolve) => {
+                resolvePending = () => resolve({ kind: 'redirect_initiated' })
+              }),
+          )
+        }
+
+        render(
+          <ActivationAccountSetup
+            variant="progressive"
+            activationContextResolution={VALID_CONTEXT_RESOLUTION}
+            signInWithGoogle={signInWithGoogle}
+            signInWithApple={signInWithApple}
+          />,
+        )
+
+        fireEvent.click(screen.getByRole('button', { name: pending }))
+        fireEvent.click(screen.getByRole('button', { name: other }))
+
+        if (pendingMock === 'signInWithGoogle') {
+          expect(signInWithGoogle).toHaveBeenCalledTimes(1)
+          expect(signInWithApple).not.toHaveBeenCalled()
+        } else {
+          expect(signInWithApple).toHaveBeenCalledTimes(1)
+          expect(signInWithGoogle).not.toHaveBeenCalled()
+        }
+
+        resolvePending()
+      },
+    )
+
+    it('disables both social buttons while either provider is loading', async () => {
+      let resolveGoogle!: () => void
+      const signInWithGoogle = vi.fn(
+        () =>
+          new Promise<{ kind: 'redirect_initiated' }>((resolve) => {
+            resolveGoogle = () => resolve({ kind: 'redirect_initiated' })
+          }),
+      )
+      const user = userEvent.setup()
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithGoogle={signInWithGoogle}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Continue with Google' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Connecting to Google/ })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeDisabled()
+      })
+
+      resolveGoogle()
+    })
+
+    it('invokes Apple auth once when Continue with Apple is clicked', async () => {
+      const user = userEvent.setup()
+      const signInWithApple = vi.fn().mockResolvedValue({ kind: 'redirect_initiated' })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithApple={signInWithApple}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Continue with Apple' }))
+
+      await waitFor(() => {
+        expect(signInWithApple).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it('prevents duplicate Apple OAuth requests on rapid clicks', async () => {
+      let resolveOAuth!: () => void
+      const signInWithApple = vi.fn(
+        () =>
+          new Promise<{ kind: 'redirect_initiated' }>((resolve) => {
+            resolveOAuth = () => resolve({ kind: 'redirect_initiated' })
+          }),
+      )
+      const user = userEvent.setup()
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithApple={signInWithApple}
+        />,
+      )
+
+      const appleButton = screen.getByRole('button', { name: 'Continue with Apple' })
+      await user.click(appleButton)
+      await user.click(appleButton)
+
+      expect(signInWithApple).toHaveBeenCalledTimes(1)
+      resolveOAuth()
+    })
+
+    it('shows safe retryable UI when Apple OAuth initiation fails', async () => {
+      const user = userEvent.setup()
+      const signInWithApple = vi.fn().mockResolvedValue({
+        kind: 'error',
+        error: { code: 'unknown', message: 'We could not start Google sign-in.' },
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          signInWithApple={signInWithApple}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Continue with Apple' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled()
     })
   })
 })
