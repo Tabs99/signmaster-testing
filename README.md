@@ -210,6 +210,34 @@ You can re-print these values any time:
 npx supabase status
 ```
 
+### Local OAuth (Google / Apple, optional)
+
+Google and Apple are enabled in [`supabase/config.toml`](./supabase/config.toml) for CP9 manual
+testing. Credentials are **not** required for a normal local stack (email/password, activation, and
+so on).
+
+The Supabase CLI substitutes `env(...)` in `config.toml` only from a **project-root `.env` file**
+and/or exported shell variables — **not** from `.env.local` (which `npm run dev:full` uses). If OAuth
+vars are missing at `supabase start`, authorize URLs contain the literal text `env(SUPABASE_AUTH_EXTERNAL_...)`,
+which produces Google `401 invalid_client` and Apple `403`.
+
+1. Create OAuth clients in Google Cloud Console and Apple Developer (see [`.env.example`](./.env.example)
+   comments for redirect URLs).
+2. Add `SUPABASE_AUTH_EXTERNAL_*` values to `.env.local` and mirror them in project-root `.env`, or
+   run `ln -sf .env.local .env` once (both paths are gitignored).
+3. Restart: `npx supabase stop` && `npx supabase start`.
+4. Confirm (no secrets in output): open
+   `http://127.0.0.1:54321/auth/v1/authorize?provider=google&redirect_to=http://localhost:4200/sign-in`
+   and check the redirect uses a `*.apps.googleusercontent.com` client id and
+   `redirect_uri=http://127.0.0.1:54321/auth/v1/callback`.
+
+**Google** can work fully on local HTTP once the Web client and env vars are correct.
+
+**Apple** web Sign in typically requires **HTTPS** return URLs registered with Apple. Local GoTrue uses
+`http://127.0.0.1:54321/auth/v1/callback`, which Apple Developer may refuse or reject at runtime. For
+Apple OAuth, use an HTTPS tunnel to that callback or test against a hosted Supabase project’s
+`https://<project-ref>.supabase.co/auth/v1/callback`.
+
 ### Reset / migrate the database
 
 ```bash
