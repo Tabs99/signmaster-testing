@@ -51,7 +51,7 @@ Status is derived from the code and tests in this repository, not from a roadmap
   implemented yet; see the deferred note in
   [`docs/manual-auth-activation-acceptance.md`](./docs/manual-auth-activation-acceptance.md).
 - **Cross-browser E2E (Firefox/WebKit)** — deferred; Playwright currently runs Chromium only.
-- **E2E in CI** — Playwright runs locally; CI runs unit/component/server tests and the build only.
+- **CI** — GitHub Actions on **Node 24 LTS**: `npm ci`, Vitest, production build, Playwright Chromium E2E (desktop + mobile). Local **Node 26** is fine for Vitest thanks to the test Web Storage polyfill in `src/test/setup.ts`.
 
 Do not treat deferred items as complete.
 
@@ -128,7 +128,7 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design, security model, 
 
 | Tool | Version / notes | Verify |
 |------|-----------------|--------|
-| Node.js | 20+ (CI uses Node 20; there is no `.nvmrc` or `engines` field) | `node -v` |
+| Node.js | 24 LTS for CI parity; local 24+ (26 supported for Vitest with repo test setup) | `node -v` |
 | npm | Ships with Node | `npm -v` |
 | Git | Any recent version | `git --version` |
 | Docker | **Required** to run local Supabase (`supabase start` runs containers) | `docker --version` |
@@ -316,7 +316,8 @@ free). No separate proxy is configured; a single process serves the app in each 
 2. `npm run dev:full` for full-stack work, or `npm run dev` for pure UI work.
 3. Make a small, scoped change.
 4. Run focused tests (e.g. `npm run test:run` for the affected area, `npm run test:e2e` for flows).
-5. Before opening a PR: `npm run test:run`, `npm run build`, and `git diff --check`.
+5. Before opening a PR: `npm run test:run`, `npm run build`, focused Playwright where relevant,
+   and `git diff --check` (full E2E runs in CI).
 6. `npx supabase stop` when you are done.
 
 ---
@@ -482,8 +483,10 @@ Verified against [`ARCHITECTURE.md`](./ARCHITECTURE.md) and `.cursor/rules/revie
 branch  →  small scoped change  →  tests  →  build  →  git diff --check  →  PR  →  review  →  merge
 ```
 
-- **Do not push directly to `main`.** Open a pull request; CI runs `npm run test:run` and
-  `npm run build` on PRs to `main`.
+- **Do not push directly to `main`.** Open a pull request; CI on **Node 24 LTS** runs
+  `npm ci`, `npm run test:run`, `npm run build`, and Playwright Chromium E2E (`npm run test:e2e`).
+  Local pre-PR checks usually match with `npm run test:run`, `npm run build`, and focused E2E —
+  you do not need to replay the full CI job in Docker.
 - Keep PR scope small and focused; do not refactor unrelated files.
 - **Do not weaken, delete, or bypass existing tests** to make work pass.
 - Every behaviour change should include appropriate automated tests.
@@ -526,7 +529,7 @@ Do not place production secrets in this repository.
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| `npm ci` fails | Ensure Node 20+ and a clean `node_modules`; delete `node_modules` and retry. |
+| `npm ci` fails | Use Node 24+ locally (CI uses 24 LTS); run `npm ci` on your host OS after Docker installs (Rollup native binaries are platform-specific). |
 | Supabase will not start | Docker is not running, or ports 54321–54324 are busy. Start Docker; `npx supabase stop` then `start`. |
 | App loads but API calls fail | You are running `npm run dev` (frontend only). Use `npm run dev:full` for `/api/*`. |
 | API routes return 500 (service errors) | `SUPABASE_SECRET_KEY` missing/incorrect in `.env.local`. |

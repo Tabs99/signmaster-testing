@@ -96,7 +96,7 @@ The app helps verified purchasers activate their entitlement, create an account,
 |------|---------|
 | **Vitest** | Unit tests and test runner |
 | **React Testing Library** | Component tests |
-| **Playwright** | End-to-end (E2E) tests in `e2e/` — installed and configured; runs locally via `npm run test:e2e` *(not yet in CI)* |
+| **Playwright** | End-to-end (E2E) tests in `e2e/` — `npm run test:e2e` locally and in GitHub Actions CI |
 
 Every new feature or behaviour change must include appropriate automated tests.
 
@@ -1125,7 +1125,9 @@ Merge to main
 - Initial CI does **not** use production Supabase credentials.
 - Amazon integration scripts (`test:amazon-*`, `sync:amazon`) are **not** run by CI.
 - Production order synchronization is **separate from CI** (scheduled jobs, not PR checks).
-- Playwright E2E can be added to CI later.
+- CI uses **Node 24 LTS** (`node-version: 24`): `npm ci` → `npm run test:run` (Vitest) → `npm run build` → Playwright Chromium E2E (`npm run test:e2e`).
+- App Vitest uses `src/test/setup.ts` plus a Web Storage polyfill so incomplete Node globals (e.g. local Node 26) do not break jsdom tests.
+- Local pre-PR review does **not** need to replay the full CI job in Docker; GitHub Actions runs the full Playwright suite on Ubuntu.
 - Local Supabase integration tests can be added to CI later.
 
 ### Local development
