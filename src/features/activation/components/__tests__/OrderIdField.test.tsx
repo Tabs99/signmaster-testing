@@ -326,19 +326,15 @@ describe('OrderIdField', () => {
   })
 
   describe('inline order ID help', () => {
-    it('shows Where do I find this? and expands with example format', async () => {
-      const user = userEvent.setup()
+    it('presents simplified help copy with a single Show me where entry', () => {
       renderOrderIdField()
 
-      const details = screen.getByText('Where do I find this?').closest('details')
-      expect(details).toBeTruthy()
-      expect(details).not.toHaveAttribute('open')
-
-      await user.click(screen.getByText('Where do I find this?'))
-
-      expect(details).toHaveAttribute('open')
-      expect(screen.getByText(/Your Orders/i)).toBeVisible()
-      expect(screen.getByText('123-1234567-1234567')).toBeVisible()
+      expect(
+        screen.getByText(/Find it in your Amazon confirmation email or order details/i),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
+      expect(screen.queryByText('Where do I find this?')).not.toBeInTheDocument()
+      expect(screen.queryByText('Need a visual guide?')).not.toBeInTheDocument()
     })
 
     it('opens detailed help when Show me where is clicked', async () => {
@@ -589,7 +585,9 @@ describe('OrderIdField', () => {
       const ids = describedBy.split(/\s+/).filter(Boolean)
       expect(ids).toHaveLength(2)
       expect(document.getElementById(ids[0])).toHaveAttribute('role', 'alert')
-      expect(document.getElementById(ids[1])).toHaveTextContent(/Where do I find this/)
+      expect(document.getElementById(ids[1])).toHaveTextContent(
+        /Find it in your Amazon confirmation email or order details/i,
+      )
     })
   })
 })

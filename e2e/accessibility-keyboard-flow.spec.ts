@@ -90,7 +90,7 @@ test.describe('SignMaster keyboard accessibility', () => {
     await expect(page).toHaveURL(/\/sign-in$/)
   })
 
-  test('Order ID inline help opens from the keyboard without submitting verification', async ({
+  test('Order ID Show me where opens from the keyboard without submitting verification', async ({
     page,
   }) => {
     await mockSupabaseAuthBootstrap(page)
@@ -102,10 +102,12 @@ test.describe('SignMaster keyboard accessibility', () => {
 
     await page.goto('/activate')
 
-    const summary = page.locator('summary', { hasText: 'Where do I find this?' })
-    await summary.focus()
-    await page.keyboard.press('Space')
-    await expect(page.locator('details[open]')).toContainText('123-1234567-1234567')
+    const showMeWhere = page.getByRole('button', { name: 'Show me where' })
+    await showMeWhere.focus()
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByRole('dialog', { name: 'Finding your Amazon order number' }),
+    ).toBeVisible()
     expect(verifyCalls).toBe(0)
   })
 

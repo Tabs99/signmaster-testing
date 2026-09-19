@@ -120,9 +120,7 @@ test.describe('Order ID clipboard UX (CP7)', () => {
     await expect(field).toHaveValue(FIXTURE_ORDER_ID)
   })
 
-  test('E2E 4 — inline Order ID help is keyboard reachable without verification', async ({
-    page,
-  }) => {
+  test('E2E 4 — Show me where is keyboard reachable without verification', async ({ page }) => {
     let verifyCalls = 0
     await page.route('**/api/activation/verify', async (route) => {
       verifyCalls += 1
@@ -130,11 +128,13 @@ test.describe('Order ID clipboard UX (CP7)', () => {
     })
     await page.goto('/activate')
 
-    const summary = page.locator('summary', { hasText: 'Where do I find this?' })
-    await summary.focus()
-    await page.keyboard.press('Space')
+    const showMeWhere = page.getByRole('button', { name: 'Show me where' })
+    await showMeWhere.focus()
+    await page.keyboard.press('Enter')
 
-    await expect(page.locator('details[open]')).toContainText('123-1234567-1234567')
+    await expect(
+      page.getByRole('dialog', { name: 'Finding your Amazon order number' }),
+    ).toBeVisible()
     await expect(page).toHaveURL(/\/activate$/)
     expect(verifyCalls).toBe(0)
   })

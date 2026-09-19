@@ -204,8 +204,11 @@ describe('ActivationStep1', () => {
     await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     expect(screen.getByLabelText('Amazon order number')).toBeInTheDocument()
-    expect(screen.getByText('Where do I find this?')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Find it in your Amazon confirmation email or order details/i),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
+    expect(screen.queryByText('Where do I find this?')).not.toBeInTheDocument()
     expect(screen.queryByText(/Returns & Orders/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/postcode/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/delivery/i)).not.toBeInTheDocument()
