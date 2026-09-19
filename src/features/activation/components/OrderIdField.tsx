@@ -9,6 +9,8 @@ import {
   cursorPositionAfterDigits,
   insertOrderIdDigit,
   isClipboardPasteSupported,
+  CLIPBOARD_NO_ORDER_ID_MESSAGE,
+  parseCompleteOrderIdFromClipboard,
   processOrderIdInput,
 } from '../utils/formatting'
 import FieldError from './FieldError'
@@ -75,7 +77,18 @@ export default function OrderIdField({
 
     try {
       const text = await navigator.clipboard.readText()
-      applyRawInput(text, { trim: true })
+      const accepted = parseCompleteOrderIdFromClipboard(text)
+      if (!accepted) {
+        setClipboardNotice(CLIPBOARD_NO_ORDER_ID_MESSAGE)
+        inputRef?.current?.focus()
+        return
+      }
+
+      onChange(accepted.value, {
+        autoVerifyEligible: accepted.autoVerifyEligible,
+        sourceWithinDigitLimit: accepted.sourceWithinDigitLimit,
+      })
+      setClipboardNotice(null)
       inputRef?.current?.focus()
     } catch {
       setClipboardNotice(

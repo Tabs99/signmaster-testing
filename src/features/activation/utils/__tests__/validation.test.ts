@@ -4,6 +4,7 @@ import {
   formatOrderId,
   insertOrderIdDigit,
   normalisePastedOrderId,
+  parseCompleteOrderIdFromClipboard,
   processOrderIdInput,
 } from '../formatting'
 import {
@@ -78,6 +79,24 @@ describe('formatting', () => {
 
   it('normalises pasted order IDs', () => {
     expect(normalisePastedOrderId('  20212345678901234  ')).toBe('202-1234567-8901234')
+  })
+
+  describe('parseCompleteOrderIdFromClipboard', () => {
+    it('accepts a complete 17-digit clipboard source', () => {
+      expect(parseCompleteOrderIdFromClipboard('20212345678901234')).toEqual({
+        value: '202-1234567-8901234',
+        autoVerifyEligible: true,
+        sourceWithinDigitLimit: true,
+      })
+    })
+
+    it('rejects empty, whitespace, incomplete, overlong, and unrelated clipboard text', () => {
+      expect(parseCompleteOrderIdFromClipboard('')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('   ')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('123456')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('not an order id')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('2021234567890123499')).toBeNull()
+    })
   })
 
   describe('processOrderIdInput', () => {

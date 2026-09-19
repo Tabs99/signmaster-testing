@@ -241,13 +241,12 @@ describe('ActivationStep1', () => {
     expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
   })
 
-  it('shows accessible validation errors for invalid order IDs', async () => {
+  it('shows accessible validation errors for invalid order IDs after submit', async () => {
     const user = userEvent.setup()
     await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const field = screen.getByLabelText('Amazon order number')
-    await user.click(field)
-    await user.tab()
+    await user.click(screen.getByRole('button', { name: 'Check my order' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       VALIDATION_MESSAGES.orderIdRequired,
@@ -256,7 +255,6 @@ describe('ActivationStep1', () => {
     expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
 
     await user.type(field, '205-12345')
-    await user.tab()
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       VALIDATION_MESSAGES.orderIdInvalid,
@@ -1498,7 +1496,7 @@ describe('ActivationStep1', () => {
       vi.unstubAllGlobals()
     })
 
-    it('does not auto-verify when Paste reads an overlong clipboard source', async () => {
+    it('does not paste or auto-verify when the dedicated Paste button reads overlong clipboard text', async () => {
       vi.useFakeTimers()
       vi.stubGlobal('isSecureContext', true)
       Object.defineProperty(navigator, 'clipboard', {
@@ -1517,7 +1515,10 @@ describe('ActivationStep1', () => {
         await Promise.resolve()
       })
 
-      expect(screen.getByLabelText('Amazon order number')).toHaveValue(VALID_ORDER_ID)
+      expect(screen.getByLabelText('Amazon order number')).toHaveValue('')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /No Amazon Order ID found in your clipboard/i,
+      )
 
       await advanceDebounce(500)
       expect(verifyOrder).not.toHaveBeenCalled()
@@ -1718,7 +1719,7 @@ describe('ActivationStep1', () => {
       expect(mockCreateActivationContext).not.toHaveBeenCalled()
     })
 
-    it('blocks manual submit after clipboard Paste with an overlong raw source', async () => {
+    it('does not populate the field when dedicated Paste reads an overlong raw source', async () => {
       vi.useFakeTimers()
       vi.stubGlobal('isSecureContext', true)
       Object.defineProperty(navigator, 'clipboard', {
@@ -1738,10 +1739,12 @@ describe('ActivationStep1', () => {
       })
 
       const field = screen.getByLabelText('Amazon order number')
-      expect(field).toHaveValue(VALID_ORDER_ID)
-      expect(field).toHaveAttribute('aria-invalid', 'true')
-      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdRawTooLong)
-      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+      expect(field).toHaveValue('')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /No Amazon Order ID found in your clipboard/i,
+      )
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
 
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Check my order' }))
@@ -2119,6 +2122,67 @@ describe('ActivationStep1', () => {
 
       await user.click(screen.getByRole('button', { name: 'Sign in' }))
       expect(onSignIn).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('activation entry customer paths', () => {
+    it('shows existing-user Sign in copy and calls onSignIn once from the entry form', async () => {
+      const user = userEvent.setup()
+      const onSignIn = vi.fn()
+      await renderActivationStep1(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'service_unavailable' })}
+          onSignIn={onSignIn}
+        />,
+      )
+
+      expect(screen.getByText(/Already have an account\?/i)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Sign in' }))
+      expect(onSignIn).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not show entry Sign in without onSignIn', async () => {
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+      )
+
+      expect(screen.queryByText(/Already have an account\?/i)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
+    })
+
+    it('opens Show me where on an empty focused field without required validation', async () => {
+      const user = userEvent.setup()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+      )
+
+      const field = screen.getByLabelText('Amazon order number')
+      await user.click(field)
+      await user.click(screen.getByRole('button', { name: 'Show me where' }))
+
+      expect(getHelpDialog()).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+    })
+
+    it('shows required validation only after an explicit empty submit', async () => {
+      const user = userEvent.setup()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+      )
+
+      const field = screen.getByLabelText('Amazon order number')
+      await user.click(field)
+      await user.click(screen.getByRole('button', { name: 'Show me where' }))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      await user.click(screen.getByRole('button', { name: 'Check my order' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        VALIDATION_MESSAGES.orderIdRequired,
+      )
+      expect(field).toHaveAttribute('aria-invalid', 'true')
     })
   })
 })

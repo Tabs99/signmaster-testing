@@ -78,6 +78,18 @@ test.describe('SignMaster keyboard accessibility', () => {
     await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
   })
 
+  test('activation Sign in link is keyboard reachable from /activate', async ({ page }) => {
+    await mockSupabaseAuthBootstrap(page)
+    await page.goto('/activate')
+
+    const signIn = page.getByRole('button', { name: 'Sign in' })
+    await signIn.focus()
+    await expect(signIn).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    await expect(page).toHaveURL(/\/sign-in$/)
+  })
+
   test('Order ID inline help opens from the keyboard without submitting verification', async ({
     page,
   }) => {

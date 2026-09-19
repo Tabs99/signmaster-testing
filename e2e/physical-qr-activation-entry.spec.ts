@@ -85,4 +85,35 @@ test.describe('physical QR activation entry', () => {
     await expectPhysicalQrActivationEntry(page)
     await expect(page.getByTestId('activation-account-setup')).toHaveCount(0)
   })
+
+  test('existing-user Sign in action navigates to /sign-in', async ({ page }) => {
+    await mockActivationContextGet(page, 'NONE')
+    await page.goto('/activate')
+
+    await expect(page.getByText(/Already have an account\?/i)).toBeVisible()
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await expect(page).toHaveURL(/\/sign-in$/)
+  })
+
+  test('Show me where on empty focused field opens help without required validation', async ({
+    page,
+  }) => {
+    await mockActivationContextGet(page, 'NONE')
+    await page.goto('/activate')
+
+    const form = page.getByTestId('activation-entry-form')
+    const field = form.getByLabel('Amazon order number')
+    await field.focus()
+    await form.getByRole('button', { name: 'Show me where' }).click()
+
+    await expect(
+      page.getByRole('dialog', { name: 'Finding your Amazon order number' }),
+    ).toBeVisible()
+    await expect(form.getByRole('alert')).toHaveCount(0)
+    await expect(field).toHaveAttribute('aria-invalid', 'false')
+
+    await page.getByRole('button', { name: 'Close help' }).click()
+    await form.getByRole('button', { name: 'Check my order' }).click()
+    await expect(form.getByRole('alert')).toContainText('Enter your Amazon order number')
+  })
 })

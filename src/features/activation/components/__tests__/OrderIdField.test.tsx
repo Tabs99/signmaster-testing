@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import OrderIdField from '../OrderIdField'
+import { CLIPBOARD_NO_ORDER_ID_MESSAGE } from '../../utils/formatting'
 import { isValidOrderId, VALIDATION_MESSAGES } from '../../utils/validation'
 
 const FORMATTED_ORDER_ID = '205-1234567-1234567'
@@ -43,20 +44,27 @@ function stubClipboard(readText: () => Promise<string>) {
   return vi.spyOn(navigator.clipboard, 'readText').mockImplementation(readTextMock)
 }
 
-function renderOrderIdFieldWithBlurValidation() {
+function renderOrderIdFieldWithSubmitValidation() {
   function Harness() {
     const [value, setValue] = useState('')
-    const [fieldTouched, setFieldTouched] = useState(false)
-    const showError = fieldTouched && !isValidOrderId(value)
+    const [submitAttempted, setSubmitAttempted] = useState(false)
+    const showError = submitAttempted && !isValidOrderId(value)
 
     return (
-      <OrderIdField
-        value={value}
-        onChange={setValue}
-        onOpenHelp={vi.fn()}
-        showError={showError}
-        onBlur={() => setFieldTouched(true)}
-      />
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          setSubmitAttempted(true)
+        }}
+      >
+        <OrderIdField
+          value={value}
+          onChange={setValue}
+          onOpenHelp={vi.fn()}
+          showError={showError}
+        />
+        <button type="submit">Submit order check</button>
+      </form>
     )
   }
 
@@ -351,11 +359,8 @@ describe('OrderIdField', () => {
   })
 
   describe('clipboard Paste button', () => {
-    beforeEach(() => {
-      stubClipboard(async () => RAW_ORDER_ID_DIGITS)
-    })
-
     it('shows Paste when clipboard read is supported', () => {
+      stubClipboard(async () => RAW_ORDER_ID_DIGITS)
       renderOrderIdField()
       expect(screen.getByRole('button', { name: 'Paste' })).toBeInTheDocument()
     })
@@ -397,11 +402,69 @@ describe('OrderIdField', () => {
       })
     })
 
-    it('does not mark overlong clipboard text as auto-verify eligible', async () => {
+    it('does not paste overlong clipboard text and shows an informational notice', async () => {
       stubClipboard(async () => `${RAW_ORDER_ID_DIGITS}99`)
       const onChange = vi.fn()
       render(
         <OrderIdField value="" onChange={onChange} onOpenHelp={vi.fn()} showError={false} />,
+      )
+      const field = screen.getByLabelText('Amazon order number')
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent(CLIPBOARD_NO_ORDER_ID_MESSAGE)
+      })
+      expect(onChange).not.toHaveBeenCalled()
+      expect(field).toHaveValue('')
+    })
+
+    it.each([
+      ['empty clipboard', ''],
+      ['whitespace-only clipboard', '   \n\t  '],
+      ['incomplete digits', '123456'],
+      ['unrelated text', 'hello from my notes'],
+    ])('rejects %s without changing the field', async (_label, clipboardText) => {
+      stubClipboard(async () => clipboardText)
+      const onChange = vi.fn()
+      render(
+        <OrderIdField
+          value=""
+          onChange={onChange}
+          onOpenHelp={vi.fn()}
+          showError={false}
+        />,
+      )
+      const field = screen.getByLabelText('Amazon order number')
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent(CLIPBOARD_NO_ORDER_ID_MESSAGE)
+      })
+      expect(onChange).not.toHaveBeenCalled()
+      expect(field).toHaveValue('')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('preserves an existing field value when clipboard content is invalid', async () => {
+      stubClipboard(async () => '123456')
+      const onChange = vi.fn()
+      render(
+        <OrderIdField
+          value={FORMATTED_ORDER_ID}
+          onChange={onChange}
+          onOpenHelp={vi.fn()}
+          showError={false}
+        />,
       )
 
       await act(async () => {
@@ -411,17 +474,32 @@ describe('OrderIdField', () => {
       })
 
       await waitFor(() => {
-        expect(onChange).toHaveBeenLastCalledWith(FORMATTED_ORDER_ID, {
-          autoVerifyEligible: false,
-          sourceWithinDigitLimit: false,
-        })
+        expect(screen.getByRole('status')).toHaveTextContent(CLIPBOARD_NO_ORDER_ID_MESSAGE)
       })
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('does not show the informational notice after a successful dedicated paste', async () => {
+      stubClipboard(async () => RAW_ORDER_ID_DIGITS)
+      const field = renderOrderIdField()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      await waitFor(() => {
+        expect(field).toHaveValue(FORMATTED_ORDER_ID)
+      })
+      expect(screen.queryByText(CLIPBOARD_NO_ORDER_ID_MESSAGE)).not.toBeInTheDocument()
     })
 
     it('shows a safe message when clipboard read fails', async () => {
       stubClipboard(async () => {
         throw new Error('denied')
       })
+      // readText failure path — clipboard content irrelevant
       const field = renderOrderIdField()
 
       await act(async () => {
@@ -452,13 +530,27 @@ describe('OrderIdField', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
 
-    it('keeps the help link visible when empty-field validation is shown after blur', async () => {
+    it('opens detailed help without showing required validation on an empty focused field', async () => {
       const user = userEvent.setup()
-      const field = renderOrderIdFieldWithBlurValidation()
+      const onOpenHelp = vi.fn()
+      render(
+        <OrderIdField value="" onChange={vi.fn()} onOpenHelp={onOpenHelp} showError={false} />,
+      )
+      const field = screen.getByLabelText('Amazon order number')
+      await user.click(field)
+      await user.click(screen.getByRole('button', { name: 'Show me where' }))
+
+      expect(onOpenHelp).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+    })
+
+    it('keeps the help link visible when empty-field validation is shown after submit', async () => {
+      const user = userEvent.setup()
+      const field = renderOrderIdFieldWithSubmitValidation()
 
       expectShowMeWhereVisible()
-      await user.click(field)
-      fireEvent.blur(field)
+      await user.click(screen.getByRole('button', { name: 'Submit order check' }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
         VALIDATION_MESSAGES.orderIdRequired,
@@ -476,10 +568,9 @@ describe('OrderIdField', () => {
 
     it('keeps the help link visible after entering a valid order ID following validation', async () => {
       const user = userEvent.setup()
-      const field = renderOrderIdFieldWithBlurValidation()
+      const field = renderOrderIdFieldWithSubmitValidation()
 
-      await user.click(field)
-      fireEvent.blur(field)
+      await user.click(screen.getByRole('button', { name: 'Submit order check' }))
       expect(await screen.findByRole('alert')).toHaveTextContent(
         VALIDATION_MESSAGES.orderIdRequired,
       )

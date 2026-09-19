@@ -96,7 +96,7 @@ export default function ActivationStep1({
       ? VALIDATION_MESSAGES.orderIdRawTooLong
       : null
   const isChecking = phase === 'checking'
-  const canSubmit = orderIdSubmittable && !isChecking
+  const canSubmit = !isChecking && !contextResolving && !overlongRawSource
 
   useEffect(() => {
     if (resultKind !== 'rate_limited' || rateLimitRetryAt === null) {
@@ -532,7 +532,6 @@ export default function ActivationStep1({
                 disabled={isChecking}
                 inputRef={orderIdRef}
                 helpButtonRef={showMeWhereRef}
-                onBlur={() => setFieldTouched(true)}
               />
 
               <div className="mt-[18px] max-[667px]:mt-3.5">
@@ -544,6 +543,19 @@ export default function ActivationStep1({
                   </PrimaryButton>
                 )}
               </div>
+
+              {onSignIn ? (
+                <p className="mt-3 text-center text-[13px] leading-[1.55] text-white/[0.55]">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => onSignIn()}
+                    className="keyline-support-action font-medium text-white/70"
+                  >
+                    Sign in
+                  </button>
+                </p>
+              ) : null}
             </form>
           )}
         </KeylinePlate>

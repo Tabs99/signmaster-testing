@@ -1,4 +1,12 @@
-import { isExactSeventeenDigitSource, isOrderIdRawSourceWithinLimit } from './validation'
+import {
+  countOrderIdDigits,
+  isExactSeventeenDigitSource,
+  isOrderIdRawSourceWithinLimit,
+  isValidOrderId,
+} from './validation'
+
+export const CLIPBOARD_NO_ORDER_ID_MESSAGE =
+  'No Amazon Order ID found in your clipboard.' as const
 
 const MAX_ORDER_ID_DIGITS = 17
 
@@ -38,6 +46,24 @@ export function formatOrderId(raw: string): string {
 
 export function normalisePastedOrderId(raw: string): string {
   return processOrderIdInput(raw, { trim: true }).value
+}
+
+/**
+ * Dedicated clipboard Paste button: accept only a complete 17-digit Amazon Order ID.
+ * Native keyboard paste continues to use {@link processOrderIdInput} directly.
+ */
+export function parseCompleteOrderIdFromClipboard(raw: string): ProcessedOrderIdInput | null {
+  const trimmed = raw.trim()
+  if (!trimmed || countOrderIdDigits(trimmed) !== 17) {
+    return null
+  }
+
+  const processed = processOrderIdInput(raw, { trim: true })
+  if (!isValidOrderId(processed.value)) {
+    return null
+  }
+
+  return processed
 }
 
 export function isClipboardPasteSupported(): boolean {

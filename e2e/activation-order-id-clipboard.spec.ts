@@ -54,21 +54,55 @@ test.describe('Order ID clipboard UX (CP7)', () => {
     expect(page.url()).not.toMatch(FIXTURE_ORDER_DIGITS)
   })
 
-  test('E2E 2 — overlong clipboard input does not auto-verify', async ({ page }) => {
+  test('E2E 2 — overlong dedicated Paste leaves the field empty with an informational notice', async ({
+    page,
+  }) => {
     await mockClipboardReadText(page, OVERLONG_CLIPBOARD)
     const getVerifyCalls = mockVerifyEligibleOnce(page)
     await page.goto('/activate')
 
     await page.getByRole('button', { name: 'Paste' }).click()
 
-    await expect(page.getByLabel('Amazon order number')).toHaveValue(FIXTURE_ORDER_ID)
-    await expect(page.getByLabel('Amazon order number')).toHaveAttribute('aria-invalid', 'true')
-    await expect(page.getByRole('alert')).toContainText(/too many digits/i)
-    await expect(page.getByRole('button', { name: 'Check my order' })).toBeDisabled()
-    await expect(page.getByTestId('activation-entry-form')).toBeVisible()
+    await expect(page.getByLabel('Amazon order number')).toHaveValue('')
+    await expect(page.getByRole('status')).toContainText(
+      'No Amazon Order ID found in your clipboard.',
+    )
+    await expect(page.getByRole('alert')).toHaveCount(0)
     await expect(page.getByTestId('activation-account-setup')).toHaveCount(0)
 
     expect(getVerifyCalls()).toBe(0)
+  })
+
+  test('E2E 2b — incomplete dedicated Paste does not format partial digits into the field', async ({
+    page,
+  }) => {
+    await mockClipboardReadText(page, '123456')
+    const getVerifyCalls = mockVerifyEligibleOnce(page)
+    await page.goto('/activate')
+
+    await page.getByRole('button', { name: 'Paste' }).click()
+
+    await expect(page.getByLabel('Amazon order number')).toHaveValue('')
+    await expect(page.getByRole('status')).toContainText(
+      'No Amazon Order ID found in your clipboard.',
+    )
+    expect(getVerifyCalls()).toBe(0)
+  })
+
+  test('E2E 2c — invalid dedicated Paste preserves an existing Order ID value', async ({
+    page,
+  }) => {
+    await mockClipboardReadText(page, '123456')
+    await page.goto('/activate')
+
+    const field = page.getByLabel('Amazon order number')
+    await field.fill(FIXTURE_ORDER_ID)
+    await page.getByRole('button', { name: 'Paste' }).click()
+
+    await expect(field).toHaveValue(FIXTURE_ORDER_ID)
+    await expect(page.getByRole('status')).toContainText(
+      'No Amazon Order ID found in your clipboard.',
+    )
   })
 
   test('E2E 3 — clipboard failure keeps manual entry usable', async ({ page }) => {
