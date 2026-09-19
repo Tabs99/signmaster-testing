@@ -222,14 +222,18 @@ export default function HelpSheet({
               >
                 Email SignMaster support
               </a>
-              <div className="mt-3 flex h-11 items-center gap-2 rounded-md border border-white/[0.28] bg-keyline-pane px-3">
-                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-white">
+              <div
+                data-testid="help-support-email-row"
+                className="mt-3 flex min-h-11 items-stretch overflow-hidden rounded-md border border-white/[0.28] bg-keyline-pane"
+              >
+                <span className="min-w-0 flex-1 self-center truncate pl-3 pr-2 font-mono text-[11.5px] text-white">
                   {SUPPORT_EMAIL}
                 </span>
                 <button
                   type="button"
                   onClick={handleCopyEmail}
-                  className="keyline-focus flex h-11 w-[58px] shrink-0 items-center justify-center rounded-md border border-white/[0.28] text-[13px] font-semibold text-white"
+                  data-testid="help-support-copy-button"
+                  className="keyline-focus flex w-[58px] shrink-0 items-center justify-center rounded-none border-0 border-l border-white/[0.28] bg-transparent px-3 text-[13px] font-semibold text-white"
                 >
                   {copyLabel}
                 </button>
