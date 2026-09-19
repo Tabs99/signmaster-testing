@@ -1,4 +1,5 @@
 import PageShell from '../../../components/layout/PageShell'
+import SignOutButton from '../../auth/components/SignOutButton'
 import BrandLockup from '../../activation/components/BrandLockup'
 
 /**
@@ -33,6 +34,9 @@ export default function AppAccessScreen() {
             Your companion learning app opens here in an upcoming update.
           </p>
         </article>
+        <div className="mt-4 w-full">
+          <SignOutButton />
+        </div>
       </div>
     </PageShell>
   )
