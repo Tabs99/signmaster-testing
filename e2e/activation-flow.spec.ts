@@ -91,6 +91,7 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByLabel('Amazon order number')).toBeVisible()
     await expect(page.getByLabel(/postcode/i)).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Check my order' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Check my order' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Show me where' })).toBeVisible()
   })
 

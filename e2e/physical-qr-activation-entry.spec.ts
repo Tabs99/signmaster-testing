@@ -113,7 +113,8 @@ test.describe('physical QR activation entry', () => {
     await expect(field).toHaveAttribute('aria-invalid', 'false')
 
     await page.getByRole('button', { name: 'Close help' }).click()
-    await form.getByRole('button', { name: 'Check my order' }).click()
+    await expect(form.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+    await field.press('Enter')
     await expect(form.getByRole('alert')).toContainText('Enter your Amazon order number')
   })
 })

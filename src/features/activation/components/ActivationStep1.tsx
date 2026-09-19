@@ -96,7 +96,13 @@ export default function ActivationStep1({
       ? VALIDATION_MESSAGES.orderIdRawTooLong
       : null
   const isChecking = phase === 'checking'
-  const canSubmit = !isChecking && !contextResolving && !overlongRawSource
+  const isEligiblePreparing =
+    resultKind === 'eligible' && !accountSetupUnlocked && phase === 'result'
+  const canSubmit =
+    orderIdSubmittable &&
+    !isChecking &&
+    !isEligiblePreparing &&
+    !contextResolving
 
   useEffect(() => {
     if (resultKind !== 'rate_limited' || rateLimitRetryAt === null) {
@@ -245,7 +251,7 @@ export default function ActivationStep1({
     setSubmitAttempted(true)
     setFieldTouched(true)
 
-    if (!orderIdSubmittable || isChecking || contextResolving) {
+    if (!orderIdSubmittable || isChecking || isEligiblePreparing || contextResolving) {
       if (!orderIdSubmittable) {
         orderIdRef.current?.focus()
       }
@@ -437,6 +443,7 @@ export default function ActivationStep1({
   const showStatusPlate = Boolean(
     !accountSetupUnlocked &&
       presentedResultKind &&
+      presentedResultKind !== 'eligible' &&
       (phase === 'result' || isResultChecking),
   )
 
@@ -513,6 +520,7 @@ export default function ActivationStep1({
           ) : (
             <form
               data-testid="activation-entry-form"
+              data-eligible-preparing={isEligiblePreparing ? 'true' : undefined}
               noValidate
               onSubmit={handleSubmit}
               aria-label="Amazon order verification form"
@@ -529,7 +537,7 @@ export default function ActivationStep1({
                 }
                 showError={showOrderIdError}
                 errorMessageOverride={orderIdErrorOverride}
-                disabled={isChecking}
+                disabled={isChecking || isEligiblePreparing}
                 inputRef={orderIdRef}
                 helpButtonRef={showMeWhereRef}
               />
@@ -537,6 +545,13 @@ export default function ActivationStep1({
               <div className="mt-[18px] max-[667px]:mt-3.5">
                 {isChecking ? (
                   <CheckingOrderButton type="submit" />
+                ) : isEligiblePreparing ? (
+                  <PrimaryButton type="button" enabled={false} loading disabled>
+                    <span className="inline-flex items-center gap-2">
+                      <LoadingSpinner />
+                      Preparing account setup…
+                    </span>
+                  </PrimaryButton>
                 ) : (
                   <PrimaryButton type="submit" enabled={canSubmit}>
                     Check my order
