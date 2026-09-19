@@ -41,9 +41,17 @@ import EyeToggle from './EyeToggle'
 import PasswordRequirement from './PasswordRequirement'
 import ValidTick from './ValidTick'
 
-export function PurchaseVerifiedBadge({ label = 'Purchase verified' }: { label?: string }) {
+export function PurchaseVerifiedBadge({
+  label = 'Purchase verified',
+  className = '',
+}: {
+  label?: string
+  className?: string
+}) {
   return (
-    <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-accent-gold/30 bg-accent-gold/10 px-3.5 py-1.5 pl-2.5">
+    <div
+      className={`inline-flex items-center gap-1.5 rounded-full border border-accent-gold/30 bg-accent-gold/10 px-3.5 py-1.5 pl-2.5 ${className}`}
+    >
       <svg aria-hidden="true" width="15" height="15" viewBox="0 0 15 15" fill="none">
         <circle
           cx="7.5"
@@ -151,6 +159,7 @@ export default function ActivationAccountSetup({
   onSignIn,
   onRestartActivation,
   onEnterApp,
+  verifiedOrderId,
 }: ActivationAccountSetupProps) {
   const internalContextResolution = useActivationContextResolution({
     enabled: activationContextResolution === undefined,
@@ -239,6 +248,11 @@ export default function ActivationAccountSetup({
     resumeState === 'valid_context' ||
     resumeState === 'valid_context_unconfirmed_auth' ||
     resumeState === 'valid_context_confirmed_auth'
+  const showPurchaseVerifiedInHeader =
+    !contextError &&
+    (variant === 'progressive'
+      ? Boolean(verifiedOrderId) || showVerifiedBadge
+      : showVerifiedBadge)
 
   function fieldState(field: AccountFieldName): AccountFieldState {
     const isFocused = focusedField === field
@@ -451,8 +465,23 @@ export default function ActivationAccountSetup({
       (resumeState === 'no_context' || resumeState === 'confirmed_auth_no_context') ? (
         <ActivationContextMissingNotice />
       ) : null}
-      {!contextError && showVerifiedBadge ? (
-        <PurchaseVerifiedBadge label={variant === 'progressive' ? 'Order verified' : undefined} />
+      {showPurchaseVerifiedInHeader ? (
+        variant === 'progressive' ? (
+          <div className="mb-4">
+            <PurchaseVerifiedBadge label="Order verified" />
+            {verifiedOrderId ? (
+              <p
+                data-testid="activation-verified-order-id"
+                className="mt-2 font-mono text-[12px] leading-snug text-white/55"
+              >
+                Order ID:{' '}
+                <span className="text-keyline-gold">{verifiedOrderId}</span>
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <PurchaseVerifiedBadge className="mb-4" />
+        )
       ) : null}
       {variant === 'progressive' ? (
         <>

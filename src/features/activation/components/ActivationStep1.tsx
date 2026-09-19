@@ -487,6 +487,7 @@ export default function ActivationStep1({
           {accountSetupUnlocked ? (
             <ActivationAccountSetup
               variant="progressive"
+              verifiedOrderId={orderIdSubmittable ? orderId : undefined}
               activationContextResolution={activationContextResolution}
               onSignIn={onSignIn}
               onRestartActivation={handleUseAnotherOrder}
@@ -592,17 +593,19 @@ export default function ActivationStep1({
           </p>
         )}
 
-        <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
-          Need help with activation?{' '}
-          <button
-            ref={getSupportRef}
-            type="button"
-            onClick={() => openHelp(2, getSupportRef.current, 'SignMaster activation help')}
-            className="keyline-support-action"
-          >
-            Get support
-          </button>
-        </p>
+        {!accountSetupUnlocked ? (
+          <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
+            Need help with activation?{' '}
+            <button
+              ref={getSupportRef}
+              type="button"
+              onClick={() => openHelp(2, getSupportRef.current, 'SignMaster activation help')}
+              className="keyline-support-action"
+            >
+              Get support
+            </button>
+          </p>
+        ) : null}
       </ActivationShell>
 
       {helpOpen ? (

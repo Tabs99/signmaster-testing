@@ -191,6 +191,7 @@ describe('ActivationStep1', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(/Never for marketing/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Get support' })).toBeInTheDocument()
+    expect(screen.getByText('Need help with activation?')).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Take your road sign practice further.' }),
     ).toBeInTheDocument()
@@ -552,6 +553,11 @@ describe('ActivationStep1', () => {
         await waitFor(() => {
           expect(screen.getByText('Order verified')).toBeInTheDocument()
         })
+        expect(screen.getByTestId('activation-verified-order-id')).toHaveTextContent(
+          `Order ID: ${VALID_ORDER_ID}`,
+        )
+        expect(screen.queryByText('Need help with activation?')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Use another order' })).toBeInTheDocument()
         expect(screen.getByText('SignMaster 101 UK Road Sign Flashcards')).toBeInTheDocument()
         expect(
           screen.getByText('Your purchase is verified. Create an account or sign in to activate access.'),

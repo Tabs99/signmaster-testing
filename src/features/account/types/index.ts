@@ -35,6 +35,8 @@ export interface ActivationAccountSetupProps extends CreateAccountScreenProps {
   variant?: ActivationAccountSetupVariant
   /** When set (progressive /activate), avoids a second context GET in the child. */
   activationContextResolution?: ActivationContextResolutionSnapshot
+  /** Verified Order ID from the in-session activation flow (progressive Step 2 only). */
+  verifiedOrderId?: string
 }
 
 export interface SignInScreenProps {

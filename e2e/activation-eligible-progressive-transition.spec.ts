@@ -31,9 +31,12 @@ async function mockGatedEligibleFlow(page: Page) {
     })
   })
 
+  let hasContext = false
+
   await page.route('**/api/activation/context', async (route) => {
     if (route.request().method() === 'POST') {
       await contextGate
+      hasContext = true
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -46,7 +49,7 @@ async function mockGatedEligibleFlow(page: Page) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ status: 'NONE' }),
+        body: JSON.stringify({ status: hasContext ? 'VALID' : 'NONE' }),
       })
       return
     }

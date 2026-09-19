@@ -53,18 +53,33 @@ export async function mockStatefulActivationContext(page: Page) {
   })
 }
 
+const DEFAULT_VERIFIED_ORDER_ID = '205-1234567-1234567'
+
 /** Waits for Checkpoint 3 inline account setup on `/activate` after eligible verify. */
-export async function expectProgressiveAccountSetupOnActivate(page: Page) {
+export async function expectProgressiveAccountSetupOnActivate(
+  page: Page,
+  verifiedOrderId: string | false = DEFAULT_VERIFIED_ORDER_ID,
+) {
   await expect(page).toHaveURL(/\/activate$/)
-  await expect(page.getByTestId('activation-account-setup')).toBeVisible()
+  expect(page.url()).not.toMatch(/\d{3}-\d{7}-\d{7}/)
+  const accountSetup = page.getByTestId('activation-account-setup')
+  await expect(accountSetup).toBeVisible()
+  await expect(accountSetup.getByText('Order verified', { exact: true })).toBeVisible()
+  if (verifiedOrderId !== false) {
+    await expect(accountSetup.getByTestId('activation-verified-order-id')).toContainText(
+      `Order ID: ${verifiedOrderId}`,
+    )
+  }
+  await expect(page.getByText('Need help with activation?')).toHaveCount(0)
   await expect(
     page.getByRole('heading', { name: 'Create your account to unlock your companion app.' }),
   ).toBeVisible()
   await expect(page.getByLabel('Email Address')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Use another order' })).toBeVisible()
 }
 
 export async function reachProgressiveAccountSetup(page: Page) {
   await page.goto('/activate')
-  await page.getByLabel('Amazon order number').fill('205-1234567-1234567')
-  await expectProgressiveAccountSetupOnActivate(page)
+  await page.getByLabel('Amazon order number').fill(DEFAULT_VERIFIED_ORDER_ID)
+  await expectProgressiveAccountSetupOnActivate(page, DEFAULT_VERIFIED_ORDER_ID)
 }

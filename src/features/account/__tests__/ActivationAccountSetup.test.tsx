@@ -64,14 +64,51 @@ describe('ActivationAccountSetup (Checkpoint 4)', () => {
         <ActivationAccountSetup
           variant="progressive"
           activationContextResolution={VALID_CONTEXT_RESOLUTION}
+          verifiedOrderId="205-1234567-1234567"
         />,
       )
 
       expect(screen.getByTestId('activation-account-setup')).toBeInTheDocument()
       expect(screen.getByText('Order verified')).toBeInTheDocument()
+      expect(screen.getByTestId('activation-verified-order-id')).toHaveTextContent(
+        'Order ID: 205-1234567-1234567',
+      )
       expect(screen.getByText('SignMaster 101 UK Road Sign Flashcards')).toBeInTheDocument()
       expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+    })
+
+    it('omits the Order ID line when verifiedOrderId is not provided', () => {
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          activationContextResolution={VALID_CONTEXT_RESOLUTION}
+        />,
+      )
+
+      expect(screen.getByText('Order verified')).toBeInTheDocument()
+      expect(screen.queryByTestId('activation-verified-order-id')).not.toBeInTheDocument()
+    })
+
+    it('shows Order verified with Order ID in progressive mode when verifiedOrderId is set before context GET is VALID', async () => {
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'NONE',
+      })
+
+      render(
+        <ActivationAccountSetup
+          variant="progressive"
+          verifiedOrderId="205-1234567-1234567"
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Order verified')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('activation-verified-order-id')).toHaveTextContent(
+        'Order ID: 205-1234567-1234567',
+      )
     })
 
     it('blocks submit when activation context is missing', async () => {
