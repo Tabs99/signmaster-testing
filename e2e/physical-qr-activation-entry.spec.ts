@@ -98,6 +98,17 @@ test.describe('physical QR activation entry', () => {
   test('Show me where on empty focused field opens help without required validation', async ({
     page,
   }) => {
+    let verifyCalls = 0
+    await page.route('**/api/activation/verify', async (route) => {
+      if (route.request().method() === 'POST') {
+        verifyCalls += 1
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'NOT_FOUND' }),
+      })
+    })
     await mockActivationContextGet(page, 'NONE')
     await page.goto('/activate')
 
@@ -115,6 +126,9 @@ test.describe('physical QR activation entry', () => {
     await page.getByRole('button', { name: 'Close help' }).click()
     await expect(form.getByRole('button', { name: 'Check my order' })).toBeDisabled()
     await field.press('Enter')
-    await expect(form.getByRole('alert')).toContainText('Enter your Amazon order number')
+
+    await expect(form.getByRole('alert')).toHaveCount(0)
+    await expect(field).toHaveAttribute('aria-invalid', 'false')
+    expect(verifyCalls).toBe(0)
   })
 })
