@@ -30,6 +30,16 @@ export type SignInResult =
   | { kind: 'success'; user: AuthUser; session: AuthSessionInfo }
   | { kind: 'error'; error: SafeAuthError }
 
+/** Supabase OAuth redirect flow — browser navigates away on success. */
+export type OAuthRedirectResult =
+  | { kind: 'redirect_initiated' }
+  | { kind: 'error'; error: SafeAuthError }
+
+/** @deprecated Prefer OAuthRedirectResult — kept for CP5 call sites. */
+export type GoogleSignInResult = OAuthRedirectResult
+
+export type AppleSignInResult = OAuthRedirectResult
+
 /**
  * Result of requesting a password-reset email. Account existence is never
  * revealed: a missing account and a successful dispatch both collapse to
@@ -66,6 +76,8 @@ export const AUTH_MESSAGES = {
     'We could not create your account. If you already have one, try signing in.',
   networkError:
     'We could not reach SignMaster right now. Check your connection and try again.',
+  accountCreatedSignInIncomplete:
+    "Your account was created, but we couldn't finish signing you in.",
   passwordResetSent:
     "If an account exists for this email, we've sent a password reset link.",
   passwordResetTemporaryFailure:
@@ -75,4 +87,6 @@ export const AUTH_MESSAGES = {
   passwordUpdateTemporaryFailure:
     'We could not update your password right now. Please try again in a moment.',
   passwordUpdateWeak: 'Choose a password that meets the requirements below.',
+  oauthInitiationFailed:
+    'We could not start Google sign-in. Please try again or use email and password.',
 } as const

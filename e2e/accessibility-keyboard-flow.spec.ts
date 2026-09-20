@@ -4,6 +4,7 @@ import {
   mockSupabaseSignInSuccess,
   seedConfirmedSession,
 } from './helpers/supabaseMock'
+import { mockStatefulActivationContext } from './helpers/progressiveActivation'
 
 const EMAIL = 'keyboard-e2e-fixture@example.invalid'
 const PASSWORD = 'Secure123!'
@@ -40,6 +41,22 @@ function mockContext(page: Page, status: 'VALID' | 'NONE') {
 }
 
 test.describe('SignMaster keyboard accessibility', () => {
+  test('Continue with Google is keyboard reachable on sign-in', async ({ page }) => {
+    await mockSupabaseAuthBootstrap(page)
+
+    await page.goto('/sign-in')
+    await page.getByRole('button', { name: 'Continue with Google' }).focus()
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeFocused()
+  })
+
+  test('Apple sign-in is not offered on sign-in', async ({ page }) => {
+    await mockSupabaseAuthBootstrap(page)
+
+    await page.goto('/sign-in')
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Continue with Apple' })).toHaveCount(0)
+  })
+
   test('sign-in is completable with the keyboard only and routes to /app', async ({ page }) => {
     await mockSupabaseSignInSuccess(page, EMAIL)
     await mockEntitlement(page, 'ACTIVE')
@@ -61,8 +78,42 @@ test.describe('SignMaster keyboard accessibility', () => {
     await expect(page.getByText(ACCESS_TEXT)).toBeVisible()
   })
 
+  test('activation Sign in link is keyboard reachable from /activate', async ({ page }) => {
+    await mockSupabaseAuthBootstrap(page)
+    await page.goto('/activate')
+
+    const signIn = page.getByRole('button', { name: 'Sign in' })
+    await signIn.focus()
+    await expect(signIn).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    await expect(page).toHaveURL(/\/sign-in$/)
+  })
+
+  test('Order ID Show me where opens from the keyboard without submitting verification', async ({
+    page,
+  }) => {
+    await mockSupabaseAuthBootstrap(page)
+    let verifyCalls = 0
+    await page.route('**/api/activation/verify', async (route) => {
+      verifyCalls += 1
+      await route.continue()
+    })
+
+    await page.goto('/activate')
+
+    const showMeWhere = page.getByRole('button', { name: 'Show me where' })
+    await showMeWhere.focus()
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByRole('dialog', { name: 'Finding your Amazon order number' }),
+    ).toBeVisible()
+    expect(verifyCalls).toBe(0)
+  })
+
   test('activation order entry is submittable with the keyboard only', async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
+    await mockStatefulActivationContext(page)
     await page.route('**/api/activation/verify', async (route) => {
       if (route.request().method() !== 'POST') {
         await route.continue()
@@ -83,9 +134,7 @@ test.describe('SignMaster keyboard accessibility', () => {
     await page.keyboard.type(ORDER_ID)
     await page.keyboard.press('Enter')
 
-    await expect(
-      page.getByRole('heading', { name: 'Your purchase is verified' }),
-    ).toBeVisible()
+    await expect(page.getByTestId('activation-account-setup')).toBeVisible()
   })
 
   test('B10 primary action is keyboard-focusable and activates with Enter', async ({ page }) => {

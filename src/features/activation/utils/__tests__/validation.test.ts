@@ -4,9 +4,13 @@ import {
   formatOrderId,
   insertOrderIdDigit,
   normalisePastedOrderId,
+  parseCompleteOrderIdFromClipboard,
+  processOrderIdInput,
 } from '../formatting'
 import {
   countOrderIdDigits,
+  isExactSeventeenDigitSource,
+  isOrderIdRawSourceWithinLimit,
   isValidOrderId,
   validateOrderId,
   VALIDATION_MESSAGES,
@@ -38,6 +42,34 @@ describe('validation', () => {
       expect(countOrderIdDigits('205-1234567-1234567')).toBe(17)
     })
   })
+
+  describe('isOrderIdRawSourceWithinLimit', () => {
+    it('is false when the raw source contains more than 17 digits', () => {
+      expect(isOrderIdRawSourceWithinLimit('205123456712345678')).toBe(false)
+      expect(isOrderIdRawSourceWithinLimit('Order # 205-1234567-1234567 ref 99')).toBe(
+        false,
+      )
+    })
+
+    it('is true for empty, partial, and exactly 17 digit sources', () => {
+      expect(isOrderIdRawSourceWithinLimit('')).toBe(true)
+      expect(isOrderIdRawSourceWithinLimit('205123456')).toBe(true)
+      expect(isOrderIdRawSourceWithinLimit('20512345671234567')).toBe(true)
+    })
+  })
+
+  describe('isExactSeventeenDigitSource', () => {
+    it('is true only when the raw source contains exactly 17 digits', () => {
+      expect(isExactSeventeenDigitSource('205-1234567-1234567')).toBe(true)
+      expect(isExactSeventeenDigitSource('Order # 205-1234567-1234567')).toBe(true)
+      expect(isExactSeventeenDigitSource('20512345671234567')).toBe(true)
+      expect(isExactSeventeenDigitSource('2051234567123456')).toBe(false)
+      expect(isExactSeventeenDigitSource('205123456712345678')).toBe(false)
+      expect(isExactSeventeenDigitSource('Order # 205-1234567-1234567 ref 99')).toBe(
+        false,
+      )
+    })
+  })
 })
 
 describe('formatting', () => {
@@ -47,6 +79,69 @@ describe('formatting', () => {
 
   it('normalises pasted order IDs', () => {
     expect(normalisePastedOrderId('  20212345678901234  ')).toBe('202-1234567-8901234')
+  })
+
+  describe('parseCompleteOrderIdFromClipboard', () => {
+    it('accepts a complete 17-digit clipboard source', () => {
+      expect(parseCompleteOrderIdFromClipboard('20212345678901234')).toEqual({
+        value: '202-1234567-8901234',
+        autoVerifyEligible: true,
+        sourceWithinDigitLimit: true,
+      })
+    })
+
+    it('rejects empty, whitespace, incomplete, overlong, and unrelated clipboard text', () => {
+      expect(parseCompleteOrderIdFromClipboard('')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('   ')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('123456')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('not an order id')).toBeNull()
+      expect(parseCompleteOrderIdFromClipboard('2021234567890123499')).toBeNull()
+    })
+  })
+
+  describe('processOrderIdInput', () => {
+    it('formats plain 17 digits and marks auto-verify eligible', () => {
+      expect(processOrderIdInput('20212345678901234')).toEqual({
+        value: '202-1234567-8901234',
+        autoVerifyEligible: true,
+        sourceWithinDigitLimit: true,
+      })
+    })
+
+    it('accepts formatted IDs with spaces and separators', () => {
+      expect(processOrderIdInput('  202-1234567-8901234  ', { trim: true })).toEqual({
+        value: '202-1234567-8901234',
+        autoVerifyEligible: true,
+        sourceWithinDigitLimit: true,
+      })
+    })
+
+    it('rejects incomplete input for auto-verify', () => {
+      expect(processOrderIdInput('202123456')).toEqual({
+        value: '202-123456',
+        autoVerifyEligible: false,
+        sourceWithinDigitLimit: true,
+      })
+    })
+
+    it('does not mark overlong raw sources as auto-verify eligible when display is capped', () => {
+      const overlong = '2021234567890123499'
+      expect(processOrderIdInput(overlong)).toEqual({
+        value: '202-1234567-8901234',
+        autoVerifyEligible: false,
+        sourceWithinDigitLimit: false,
+      })
+    })
+
+    it('evaluates auto-verify from raw source before trim truncation', () => {
+      expect(
+        processOrderIdInput('Order # 202-1234567-8901234 ref 99', { trim: true }),
+      ).toEqual({
+        value: '202-1234567-8901234',
+        autoVerifyEligible: false,
+        sourceWithinDigitLimit: false,
+      })
+    })
   })
 
   it('inserts digits for key-repeat at the current selection', () => {

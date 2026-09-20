@@ -167,6 +167,10 @@ describe('ActivationClaimResult', () => {
 
     await user.click(screen.getByRole('button', { name: 'Use another order' }))
     expect(onRestartActivation).toHaveBeenCalledTimes(1)
+
+    const bodyText = document.body.textContent ?? ''
+    expect(bodyText).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+    expect(bodyText).not.toMatch(/owner@/i)
   })
 
   it('shows safe ineligible copy without leaking an internal reason', () => {

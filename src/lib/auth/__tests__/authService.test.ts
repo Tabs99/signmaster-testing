@@ -6,6 +6,7 @@ function createMockClient() {
     auth: {
       signUp: vi.fn(),
       signInWithPassword: vi.fn(),
+      signInWithOAuth: vi.fn(),
       resetPasswordForEmail: vi.fn(),
       updateUser: vi.fn(),
       signOut: vi.fn(),
@@ -170,6 +171,102 @@ describe('authService', () => {
     const result = await service.signIn('alex@example.invalid', 'Secure123!')
 
     expect(result.kind).toBe('success')
+  })
+
+  describe('signInWithGoogle', () => {
+    it('calls Supabase OAuth with provider google and a safe redirect URL', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockResolvedValue({ data: { url: 'https://oauth.test' }, error: null })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithGoogle({
+        redirectTo: 'http://localhost:4200/activate',
+      })
+
+      expect(result).toEqual({ kind: 'redirect_initiated' })
+      expect(client.auth.signInWithOAuth).toHaveBeenCalledWith({
+        provider: 'google',
+        options: { redirectTo: 'http://localhost:4200/activate' },
+      })
+    })
+
+    it('maps OAuth initiation failures to safe auth errors', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockResolvedValue({
+        data: { url: null },
+        error: { message: 'Provider misconfigured' },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithGoogle({
+        redirectTo: 'http://localhost:4200/sign-in',
+      })
+
+      expect(result.kind).toBe('error')
+      if (result.kind === 'error') {
+        expect(result.error.message).not.toContain('misconfigured')
+      }
+    })
+
+    it('maps network failures to the standard network error message', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithGoogle()
+
+      expect(result.kind).toBe('error')
+      if (result.kind === 'error') {
+        expect(result.error.code).toBe('network_error')
+      }
+    })
+  })
+
+  describe('signInWithApple', () => {
+    it('calls Supabase OAuth with provider apple and a safe redirect URL', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockResolvedValue({ data: { url: 'https://oauth.test' }, error: null })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithApple({
+        redirectTo: 'http://localhost:4200/sign-in',
+      })
+
+      expect(result).toEqual({ kind: 'redirect_initiated' })
+      expect(client.auth.signInWithOAuth).toHaveBeenCalledWith({
+        provider: 'apple',
+        options: { redirectTo: 'http://localhost:4200/sign-in' },
+      })
+    })
+
+    it('maps OAuth initiation failures to safe auth errors', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockResolvedValue({
+        data: { url: null },
+        error: { message: 'Apple provider misconfigured' },
+      })
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithApple()
+
+      expect(result.kind).toBe('error')
+      if (result.kind === 'error') {
+        expect(result.error.message).not.toContain('misconfigured')
+      }
+    })
+
+    it('maps network failures to the standard network error message', async () => {
+      const client = createMockClient()
+      client.auth.signInWithOAuth.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      const service = createAuthService({ getClient: () => client as never })
+      const result = await service.signInWithApple()
+
+      expect(result.kind).toBe('error')
+      if (result.kind === 'error') {
+        expect(result.error.code).toBe('network_error')
+      }
+    })
   })
 
   describe('requestPasswordReset', () => {

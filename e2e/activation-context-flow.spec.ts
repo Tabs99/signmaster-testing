@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
+import {
+  expectProgressiveAccountSetupOnActivate,
+  mockStatefulActivationContext,
+} from './helpers/progressiveActivation'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
 
@@ -51,11 +55,9 @@ function mockActivationContextRoutes(
 
 async function reachEligibleResult(page: Page) {
   await page.goto('/activate')
+  // A complete valid Order ID auto-verifies after a short debounce.
   await page.getByLabel('Amazon order number').fill(FIXTURE_ORDER_ID)
-  await page.getByRole('button', { name: 'Check my order' }).click()
-  await expect(
-    page.getByRole('heading', { name: 'Your purchase is verified' }),
-  ).toBeVisible()
+  await expectProgressiveAccountSetupOnActivate(page)
 }
 
 test.describe('SignMaster activation context persistence', () => {
@@ -63,39 +65,43 @@ test.describe('SignMaster activation context persistence', () => {
     await mockSupabaseAuthBootstrap(page)
   })
 
-  test('ELIGIBLE → context created → A5 Continue → create-account still resolves VALID', async ({
+  test('ELIGIBLE → context created → progressive activate still resolves VALID', async ({
     page,
   }) => {
     await mockVerifyEligible(page)
-    await mockActivationContextRoutes(page, 'VALID')
+    await mockStatefulActivationContext(page)
     await reachEligibleResult(page)
 
-    await page.getByRole('button', { name: 'Continue to account setup' }).click()
-    await expect(page).toHaveURL(/\/create-account$/)
-    await expect(page.getByText('Purchase verified')).toBeVisible()
+    await expect(page).toHaveURL(/\/activate$/)
+    await expect(page.getByText('Order verified')).toBeVisible()
     await expect(page.getByTestId('activation-context-missing-notice')).toHaveCount(0)
   })
 
   test('ELIGIBLE → context → sign-in still resolves VALID', async ({ page }) => {
     await mockVerifyEligible(page)
-    await mockActivationContextRoutes(page, 'VALID')
+    await mockStatefulActivationContext(page)
     await reachEligibleResult(page)
 
-    await page.getByRole('button', { name: 'Continue to account setup' }).click()
-    await expect(page).toHaveURL(/\/create-account$/)
+    await expect(page).toHaveURL(/\/activate$/)
     await page.goto('/sign-in')
     await expect(page.getByTestId('activation-context-missing-notice')).toHaveCount(0)
   })
 
-  test('refresh on create-account still resolves context', async ({ page }) => {
+  test('refresh on activate progressive flow still resolves context', async ({ page }) => {
     await mockVerifyEligible(page)
-    await mockActivationContextRoutes(page, 'VALID')
+    await mockStatefulActivationContext(page)
     await reachEligibleResult(page)
-    await page.getByRole('button', { name: 'Continue to account setup' }).click()
-    await expect(page).toHaveURL(/\/create-account$/)
 
     await page.reload()
+    await expect(page.getByTestId('activation-account-setup')).toBeVisible()
+    await expect(page.getByText('Order verified')).toBeVisible()
+  })
+
+  test('direct /create-account resume path still resolves VALID context', async ({ page }) => {
+    await mockActivationContextRoutes(page, 'VALID')
+    await page.goto('/create-account')
     await expect(page.getByText('Purchase verified')).toBeVisible()
+    await expect(page.getByTestId('activation-context-missing-notice')).toHaveCount(0)
   })
 
   test('expired context shows restart notice', async ({ page }) => {

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   mockSupabaseAuthBootstrap,
   mockSupabaseSignInSuccess,
+  mockSupabaseSignUpConfirmationRequired,
 } from './helpers/supabaseMock'
 
 const AUTH_TEST_EMAIL = 'completion-e2e-fixture@example.invalid'
@@ -80,26 +81,6 @@ function mockContinuationCreate(page: Page, reference = 'e2e-continuation-refere
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ status: 'CREATED', reference }),
-    })
-  })
-}
-
-/**
- * Mocks a Supabase sign-up that requires email confirmation: no session token and
- * an unconfirmed user, mirroring Supabase when confirmations are enabled.
- */
-function mockSupabaseSignUpConfirmationRequired(page: Page, email: string) {
-  return page.route('**/auth/v1/signup**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        user: {
-          id: '00000000-0000-4000-8000-000000000003',
-          email,
-          email_confirmed_at: null,
-        },
-      }),
     })
   })
 }

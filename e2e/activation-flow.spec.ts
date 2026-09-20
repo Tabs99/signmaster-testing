@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
+import {
+  expectProgressiveAccountSetupOnActivate,
+  mockStatefulActivationContext,
+} from './helpers/progressiveActivation'
 
 const FIXTURE_ORDER_ID = '205-1234567-1234567'
 const NOT_SHIPPED_FIXTURE_ORDER_ID = '222-2222222-2222222'
@@ -13,8 +17,13 @@ async function fillNotShippedFixtureOrderId(page: Page) {
   await page.getByLabel('Amazon order number').fill(NOT_SHIPPED_FIXTURE_DIGITS)
 }
 
-async function submitOrderCheck(page: Page) {
-  await page.getByRole('button', { name: 'Check my order' }).click()
+// Verification now starts automatically once a complete, valid Order ID is
+// present (see fillValidOrderId / fillNotShippedFixtureOrderId). The manual
+// "Check my order" button remains as an accessibility fallback and is covered
+// by the ActivationStep1 unit tests; these E2E flows rely on auto-verification,
+// which avoids racing the button as it is replaced by the checking state.
+async function submitOrderCheck(_page: Page) {
+  // Intentionally a no-op: a complete valid Order ID auto-verifies.
 }
 
 async function expectApprovedCheckingButton(page: Page) {
@@ -70,6 +79,7 @@ function mockVerifyRoute(
 test.describe('SignMaster activation verification', () => {
   test.beforeEach(async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
+    await mockStatefulActivationContext(page)
     await page.goto('/activate')
   })
 
@@ -81,6 +91,7 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByLabel('Amazon order number')).toBeVisible()
     await expect(page.getByLabel(/postcode/i)).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Check my order' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Check my order' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Show me where' })).toBeVisible()
   })
 
@@ -123,7 +134,7 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByLabel('Amazon order number')).toBeDisabled()
 
     releaseResponse?.()
-    await expect(page.getByRole('heading', { name: 'Your purchase is verified' })).toBeVisible()
+    await expectProgressiveAccountSetupOnActivate(page)
   })
 
   test('blocks duplicate submission while checking', async ({ page }) => {
@@ -139,9 +150,9 @@ test.describe('SignMaster activation verification', () => {
     })
 
     await fillValidOrderId(page)
-    const submit = page.getByRole('button', { name: 'Check my order' })
-    await submit.click()
+    // Auto-verification starts once the complete valid Order ID is present.
     await expect(page.getByRole('button', { name: 'Checking your order…' })).toBeVisible()
+    // Re-triggering while a verification is in flight must not duplicate it.
     await page.getByRole('button', { name: 'Checking your order…' }).click({ force: true })
 
     await page.waitForResponse('**/api/activation/verify')
@@ -354,7 +365,7 @@ test.describe('SignMaster activation verification', () => {
     await expect(page.getByRole('button', { name: 'Check again' })).toHaveCount(0)
 
     releaseRetry!()
-    await expect(page.getByRole('heading', { name: 'Your purchase is verified' })).toBeVisible()
+    await expectProgressiveAccountSetupOnActivate(page)
     expect(callCount).toBe(2)
   })
 

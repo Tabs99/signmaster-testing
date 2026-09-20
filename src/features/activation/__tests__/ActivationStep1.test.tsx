@@ -1,9 +1,35 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type React from 'react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActivationVerifyResult } from '../../../lib/api/activationApi'
 import ActivationStep1 from '../components/ActivationStep1'
 import { VALIDATION_MESSAGES } from '../utils/validation'
+
+vi.mock('../../../lib/api/activationContextApi', () => ({
+  resolveActivationContext: vi.fn(),
+  createActivationContext: vi.fn(),
+}))
+
+vi.mock('../../auth/context/AuthProvider', () => ({
+  useAuthContext: vi.fn(),
+}))
+
+vi.mock('../../activation/hooks/useActivationClaimWhenReady', () => ({
+  useActivationClaimWhenReady: vi.fn(() => ({ state: { kind: 'idle' }, retry: vi.fn() })),
+}))
+
+import {
+  createActivationContext,
+  resolveActivationContext,
+} from '../../../lib/api/activationContextApi'
+import { useAuthContext } from '../../auth/context/AuthProvider'
+import { useActivationClaimWhenReady } from '../../activation/hooks/useActivationClaimWhenReady'
+
+const mockCreateActivationContext = vi.mocked(createActivationContext)
+const mockResolveActivationContext = vi.mocked(resolveActivationContext)
+const mockUseAuthContext = vi.mocked(useAuthContext)
+const mockUseActivationClaimWhenReady = vi.mocked(useActivationClaimWhenReady)
 
 const ORDER_HELP_DIALOG = 'Finding your Amazon order number'
 const SUPPORT_HELP_DIALOG = 'SignMaster activation help'
@@ -35,14 +61,39 @@ function createPendingVerifyMock() {
   return { verifyOrder, resolveVerify: (value: ActivationVerifyResult) => resolveVerify(value) }
 }
 
+async function waitForActivationContextReady() {
+  await waitFor(() => {
+    expect(screen.queryByTestId('activation-context-restoring')).not.toBeInTheDocument()
+  })
+}
+
+async function renderActivationStep1(
+  ui: React.ReactElement<React.ComponentProps<typeof ActivationStep1>>,
+  options?: { waitForContext?: boolean },
+) {
+  const view = render(ui)
+  if (options?.waitForContext !== false) {
+    if (vi.isFakeTimers()) {
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+    } else {
+      await waitForActivationContextReady()
+    }
+  }
+  return view
+}
+
 async function typeValidOrderId(user: ReturnType<typeof userEvent.setup>) {
-  const field = screen.getByLabelText('Amazon order number')
+  const field = await screen.findByLabelText('Amazon order number')
   await user.type(field, VALID_ORDER_ID_DIGITS)
   return field
 }
 
 async function submitOrder(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Check my order' }))
+  await user.click(await screen.findByRole('button', { name: 'Check my order' }))
 }
 
 function expectNoStorageWrites() {
@@ -56,15 +107,61 @@ function expectCheckingButton(button: HTMLElement) {
   expect(button.querySelector('svg[aria-hidden="true"]')).toBeTruthy()
 }
 
+function createPendingContextResolutionMock() {
+  let resolveContext: (value: Awaited<ReturnType<typeof resolveActivationContext>>) => void =
+    () => undefined
+  mockResolveActivationContext.mockImplementation(
+    () =>
+      new Promise<Awaited<ReturnType<typeof resolveActivationContext>>>((resolve) => {
+        resolveContext = resolve
+      }),
+  )
+  return {
+    resolveContext: (value: Awaited<ReturnType<typeof resolveActivationContext>>) =>
+      resolveContext(value),
+  }
+}
+
+async function expectProgressiveAccountSetupVisible() {
+  mockResolveActivationContext.mockResolvedValue({
+    kind: 'status',
+    status: 'VALID',
+  })
+  await waitFor(() => {
+    expect(screen.getByTestId('activation-account-setup')).toBeInTheDocument()
+  })
+  expect(
+    screen.getByRole('heading', {
+      name: 'Create your account to unlock your companion app.',
+    }),
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
+}
+
 describe('ActivationStep1', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
-    vi.restoreAllMocks()
+    mockResolveActivationContext.mockResolvedValue({
+      kind: 'status',
+      status: 'NONE',
+    })
+    mockCreateActivationContext.mockResolvedValue({ kind: 'created' })
+    mockUseAuthContext.mockReturnValue({
+      isInitializing: false,
+      isAuthenticated: false,
+      user: null,
+      signOut: vi.fn(),
+      refresh: vi.fn(),
+    })
+    mockUseActivationClaimWhenReady.mockReturnValue({
+      state: { kind: 'idle' },
+      retry: vi.fn(),
+    })
   })
 
-  it('renders approved essential Step 1 content', () => {
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+  it('renders approved essential Step 1 content', async () => {
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     expect(screen.getAllByRole('img', { name: 'SignMaster' }).length).toBeGreaterThan(0)
     expect(
@@ -86,6 +183,7 @@ describe('ActivationStep1', () => {
     expect(
       screen.getByRole('button', { name: 'Check my order' }),
     ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
     expect(
       screen.getByText(
         'Your order number is used only to verify your purchase and manage your SignMaster access.',
@@ -93,6 +191,7 @@ describe('ActivationStep1', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(/Never for marketing/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Get support' })).toBeInTheDocument()
+    expect(screen.getByText('Need help with activation?')).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: 'Take your road sign practice further.' }),
     ).toBeInTheDocument()
@@ -103,14 +202,15 @@ describe('ActivationStep1', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows only the Amazon order number field for purchase verification', () => {
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+  it('shows only the Amazon order number field for purchase verification', async () => {
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     expect(screen.getByLabelText('Amazon order number')).toBeInTheDocument()
     expect(
       screen.getByText(/Find it in your Amazon confirmation email or order details/i),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
+    expect(screen.queryByText('Where do I find this?')).not.toBeInTheDocument()
     expect(screen.queryByText(/Returns & Orders/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/postcode/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/delivery/i)).not.toBeInTheDocument()
@@ -118,7 +218,7 @@ describe('ActivationStep1', () => {
 
   it('formats order IDs while typing and accepts paste', async () => {
     const user = userEvent.setup()
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const field = screen.getByLabelText('Amazon order number')
     await user.type(field, VALID_ORDER_ID_DIGITS)
@@ -135,7 +235,7 @@ describe('ActivationStep1', () => {
 
   it('shows 17/17 digits for repeated-digit order IDs without verification feedback', async () => {
     const user = userEvent.setup()
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const field = screen.getByLabelText('Amazon order number')
     await user.type(field, '00000000000000000')
@@ -146,13 +246,16 @@ describe('ActivationStep1', () => {
     expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
   })
 
-  it('shows accessible validation errors for invalid order IDs', async () => {
+  it('shows accessible validation errors for incomplete order IDs via form submit', async () => {
     const user = userEvent.setup()
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const field = screen.getByLabelText('Amazon order number')
-    await user.click(field)
-    await user.tab()
+    const form = screen.getByTestId('activation-entry-form')
+    const submit = screen.getByRole('button', { name: 'Check my order' })
+
+    expect(submit).toBeDisabled()
+    fireEvent.submit(form)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       VALIDATION_MESSAGES.orderIdRequired,
@@ -161,8 +264,9 @@ describe('ActivationStep1', () => {
     expect(screen.getByRole('button', { name: 'Show me where' })).toBeInTheDocument()
 
     await user.type(field, '205-12345')
-    await user.tab()
+    expect(submit).toBeDisabled()
 
+    fireEvent.submit(form)
     expect(screen.getByRole('alert')).toHaveTextContent(
       VALIDATION_MESSAGES.orderIdInvalid,
     )
@@ -172,22 +276,19 @@ describe('ActivationStep1', () => {
 
   it('submits with Enter and does not call the verify API or write localStorage', async () => {
     const user = userEvent.setup()
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const verifyOrder = createVerifyMock({
       kind: 'business_status',
       status: 'ELIGIBLE',
     })
 
-    render(<ActivationStep1 verifyOrder={verifyOrder} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
 
     const field = screen.getByLabelText('Amazon order number')
-    await user.type(field, VALID_ORDER_ID)
+    await user.type(field, '205-12345')
     await user.keyboard('{Enter}')
 
-    await waitFor(() => {
-      expect(fetchSpy).not.toHaveBeenCalled()
-    })
-    expectNoStorageWrites()
+    expect(verifyOrder).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem('signmaster_activation_entry_deferred')).toBeNull()
     expect(
       screen.queryByRole('heading', { name: 'Create your SignMaster account' }),
     ).not.toBeInTheDocument()
@@ -195,7 +296,7 @@ describe('ActivationStep1', () => {
 
   it('opens the first help section from Show me where with the order-number title', async () => {
     const user = userEvent.setup()
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const showMeWhere = screen.getByRole('button', { name: 'Show me where' })
     await user.click(showMeWhere)
@@ -221,7 +322,7 @@ describe('ActivationStep1', () => {
 
   it('opens and closes the help sheet from Show me where', async () => {
     const user = userEvent.setup()
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const showMeWhere = screen.getByRole('button', { name: 'Show me where' })
     await user.click(showMeWhere)
@@ -241,7 +342,7 @@ describe('ActivationStep1', () => {
 
   it('opens the support help section from Get support with the activation-help title', async () => {
     const user = userEvent.setup()
-    render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+    await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
     const getSupport = screen.getByRole('button', { name: 'Get support' })
     expect(getSupport.tagName).toBe('BUTTON')
@@ -258,7 +359,7 @@ describe('ActivationStep1', () => {
   describe('HelpSheet focus management', () => {
     it('moves focus to the close control when opened from Show me where', async () => {
       const user = userEvent.setup()
-      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
       await user.click(screen.getByRole('button', { name: 'Show me where' }))
 
@@ -269,7 +370,7 @@ describe('ActivationStep1', () => {
 
     it('keeps Tab focus inside the HelpSheet', async () => {
       const user = userEvent.setup()
-      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
       await user.click(screen.getByRole('button', { name: 'Show me where' }))
 
@@ -284,7 +385,7 @@ describe('ActivationStep1', () => {
 
     it('keeps Shift+Tab focus inside the HelpSheet', async () => {
       const user = userEvent.setup()
-      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
       await user.click(screen.getByRole('button', { name: 'Show me where' }))
 
@@ -299,7 +400,7 @@ describe('ActivationStep1', () => {
 
     it('closes on Escape and restores focus to Show me where', async () => {
       const user = userEvent.setup()
-      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
       const showMeWhere = screen.getByRole('button', { name: 'Show me where' })
       await user.click(showMeWhere)
@@ -318,7 +419,7 @@ describe('ActivationStep1', () => {
 
     it('restores focus to Get support when opened from there and closed with Escape', async () => {
       const user = userEvent.setup()
-      render(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
 
       const getSupport = screen.getByRole('button', { name: 'Get support' })
       await user.click(getSupport)
@@ -342,7 +443,7 @@ describe('ActivationStep1', () => {
         const user = userEvent.setup()
         const { verifyOrder, resolveVerify } = createPendingVerifyMock()
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -356,18 +457,14 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('disables the order field while checking', async () => {
         const user = userEvent.setup()
         const { verifyOrder, resolveVerify } = createPendingVerifyMock()
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         const field = await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -376,18 +473,14 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('sets aria-busy on the submit button while checking', async () => {
         const user = userEvent.setup()
         const { verifyOrder, resolveVerify } = createPendingVerifyMock()
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -396,18 +489,14 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('blocks duplicate clicks while verification is in flight', async () => {
         const user = userEvent.setup()
         const { verifyOrder, resolveVerify } = createPendingVerifyMock()
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -419,18 +508,14 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
 
       it('blocks duplicate Enter submissions while verification is in flight', async () => {
         const user = userEvent.setup()
         const { verifyOrder, resolveVerify } = createPendingVerifyMock()
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await user.keyboard('{Enter}')
         await user.keyboard('{Enter}')
@@ -439,133 +524,110 @@ describe('ActivationStep1', () => {
 
         resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
       })
     })
 
     describe('A5 ELIGIBLE', () => {
-      it('shows eligible heading and body copy', async () => {
+      it('shows progressive verified copy and inline account setup', async () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
+        const createContext = vi.fn().mockImplementation(async () => {
+          mockResolveActivationContext.mockResolvedValue({
+            kind: 'status',
+            status: 'VALID',
+          })
+          return { kind: 'created' }
+        })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        render(
+          <ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />,
+        )
         await typeValidOrderId(user)
         await submitOrder(user)
 
+        await expectProgressiveAccountSetupVisible()
         await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          expect(screen.getByText('Order verified')).toBeInTheDocument()
         })
+        expect(screen.getByTestId('activation-verified-order-id')).toHaveTextContent(
+          `Order ID: ${VALID_ORDER_ID}`,
+        )
+        expect(screen.queryByText('Need help with activation?')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Use another order' })).toBeInTheDocument()
+        expect(screen.getByText('SignMaster 101 UK Road Sign Flashcards')).toBeInTheDocument()
         expect(
-          screen.getByText('Your SignMaster purchase has been verified.'),
+          screen.getByText('Your purchase is verified. Create an account or sign in to activate access.'),
         ).toBeInTheDocument()
-        expect(
-          screen.getByText(
-            'Next, create an account or sign in to activate access and save your progress.',
-          ),
-        ).toBeInTheDocument()
-        expect(screen.getByText(VALID_ORDER_ID)).toBeInTheDocument()
-        expectNoStorageWrites()
+        expect(localStorage.length).toBe(0)
+        expect(sessionStorage.getItem('signmaster_activation_entry_deferred')).toBeNull()
         expect(
           screen.queryByRole('heading', { name: 'Create your SignMaster account' }),
         ).not.toBeInTheDocument()
       })
 
-      it('does not show Continue without onContinueToAccount', async () => {
+      it('does not show Continue to account setup after eligible verification', async () => {
         const user = userEvent.setup()
-        const verifyOrder = createVerifyMock({
-          kind: 'business_status',
-          status: 'ELIGIBLE',
-        })
-
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
-        await typeValidOrderId(user)
-        await submitOrder(user)
-
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
-        expect(
-          screen.queryByRole('button', { name: 'Continue to account setup' }),
-        ).not.toBeInTheDocument()
-      })
-
-      it('shows Continue and calls onContinueToAccount when context creation succeeds', async () => {
-        const user = userEvent.setup()
-        const onContinueToAccount = vi.fn()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
         const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
 
-        render(
-          <ActivationStep1
-            verifyOrder={verifyOrder}
-            createContext={createContext}
-            onContinueToAccount={onContinueToAccount}
-          />,
-        )
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
-        const continueButton = await screen.findByRole('button', {
-          name: 'Continue to account setup',
-        })
-        await user.click(continueButton)
-
+        await expectProgressiveAccountSetupVisible()
+        expect(
+          screen.queryByRole('button', { name: 'Continue to account setup' }),
+        ).not.toBeInTheDocument()
         expect(createContext).toHaveBeenCalledWith('205-1234567-1234567')
-        expect(onContinueToAccount).toHaveBeenCalledTimes(1)
       })
 
-      it('blocks navigation when context creation fails', async () => {
+      it('creates activation context and reveals account setup inline', async () => {
         const user = userEvent.setup()
-        const onContinueToAccount = vi.fn()
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'ELIGIBLE',
+        })
+        const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
+
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        await expectProgressiveAccountSetupVisible()
+        expect(createContext).toHaveBeenCalledTimes(1)
+        expect(screen.getByText('Step 2 of 2 · Create account')).toBeInTheDocument()
+      })
+
+      it('shows service unavailable when inline context creation fails', async () => {
+        const user = userEvent.setup()
         const verifyOrder = createVerifyMock({
           kind: 'business_status',
           status: 'ELIGIBLE',
         })
         const createContext = vi.fn().mockResolvedValue({ kind: 'service_unavailable' })
 
-        render(
-          <ActivationStep1
-            verifyOrder={verifyOrder}
-            createContext={createContext}
-            onContinueToAccount={onContinueToAccount}
-          />,
-        )
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
-        const continueButton = await screen.findByRole('button', {
-          name: 'Continue to account setup',
-        })
-        await user.click(continueButton)
-
-        expect(onContinueToAccount).not.toHaveBeenCalled()
         await waitFor(() => {
           expect(
             screen.getByRole('heading', { name: "We can't check your order right now" }),
           ).toBeInTheDocument()
         })
+        expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
       })
 
-      it('does not create duplicate contexts on repeated Continue clicks', async () => {
+      it('does not create duplicate contexts during progressive unlock', async () => {
         const user = userEvent.setup()
-        const onContinueToAccount = vi.fn()
-        let resolveCreate:
-          | ((value: { kind: 'created' }) => void)
-          | undefined
+        let resolveCreate: ((value: { kind: 'created' }) => void) | undefined
         const createContext = vi.fn(
           () =>
             new Promise<{ kind: 'created' }>((resolve) => {
@@ -580,23 +642,118 @@ describe('ActivationStep1', () => {
               status: 'ELIGIBLE',
             })}
             createContext={createContext}
-            onContinueToAccount={onContinueToAccount}
           />,
         )
         await typeValidOrderId(user)
         await submitOrder(user)
 
-        const continueButton = await screen.findByRole('button', {
-          name: 'Continue to account setup',
-        })
-        await user.click(continueButton)
-        await user.click(continueButton)
-
         expect(createContext).toHaveBeenCalledTimes(1)
         resolveCreate?.({ kind: 'created' })
+        await expectProgressiveAccountSetupVisible()
+      })
+
+      it('shows Preparing account setup while context is created without the eligible result plate', async () => {
+        const user = userEvent.setup()
+        let resolveCreate: ((value: { kind: 'created' }) => void) | undefined
+        const createContext = vi.fn(
+          () =>
+            new Promise<{ kind: 'created' }>((resolve) => {
+              resolveCreate = resolve
+            }),
+        )
+
+        await renderActivationStep1(
+          <ActivationStep1
+            verifyOrder={createVerifyMock({
+              kind: 'business_status',
+              status: 'ELIGIBLE',
+            })}
+            createContext={createContext}
+          />,
+        )
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
         await waitFor(() => {
-          expect(onContinueToAccount).toHaveBeenCalledTimes(1)
+          expect(
+            screen.getByRole('button', { name: 'Preparing account setup…' }),
+          ).toBeInTheDocument()
         })
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+        expect(screen.queryByTestId('activation-result-card')).not.toBeInTheDocument()
+        expect(
+          screen.queryByRole('heading', { name: 'Your purchase is verified' }),
+        ).not.toBeInTheDocument()
+
+        resolveCreate?.({ kind: 'created' })
+        await expectProgressiveAccountSetupVisible()
+      })
+
+      it('never flashes the eligible success plate between checking and account setup', async () => {
+        const user = userEvent.setup()
+        const { verifyOrder, resolveVerify } = createPendingVerifyMock()
+        let resolveCreate: ((value: { kind: 'created' }) => void) | undefined
+        const createContext = vi.fn(
+          () =>
+            new Promise<{ kind: 'created' }>((resolve) => {
+              resolveCreate = resolve
+            }),
+        )
+
+        await renderActivationStep1(
+          <ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />,
+        )
+        await typeValidOrderId(user)
+        await submitOrder(user)
+
+        expectCheckingButton(screen.getByRole('button', { name: 'Checking your order…' }))
+        expect(
+          screen.queryByRole('heading', { name: 'Your purchase is verified' }),
+        ).not.toBeInTheDocument()
+
+        resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
+
+        await waitFor(() => {
+          expect(
+            screen.getByRole('button', { name: 'Preparing account setup…' }),
+          ).toBeInTheDocument()
+        })
+        expect(screen.queryByTestId('activation-result-card')).not.toBeInTheDocument()
+        expect(
+          screen.queryByRole('heading', { name: 'Your purchase is verified' }),
+        ).not.toBeInTheDocument()
+
+        resolveCreate?.({ kind: 'created' })
+        await expectProgressiveAccountSetupVisible()
+      })
+
+      it('manual Check my order still verifies and reaches account setup without eligible plate', async () => {
+        const user = userEvent.setup()
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        const verifyOrder = createVerifyMock({
+          kind: 'business_status',
+          status: 'ELIGIBLE',
+        })
+        const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
+
+        await renderActivationStep1(
+          <ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />,
+        )
+        const field = screen.getByLabelText('Amazon order number')
+        await user.type(field, VALID_ORDER_ID_DIGITS)
+        await act(async () => {
+          vi.advanceTimersByTime(50)
+        })
+
+        expect(verifyOrder).not.toHaveBeenCalled()
+        await submitOrder(user)
+
+        expect(verifyOrder).toHaveBeenCalledTimes(1)
+        await expectProgressiveAccountSetupVisible()
+        expect(
+          screen.queryByRole('heading', { name: 'Your purchase is verified' }),
+        ).not.toBeInTheDocument()
+        vi.useRealTimers()
       })
     })
 
@@ -608,7 +765,7 @@ describe('ActivationStep1', () => {
           status: 'NOT_FOUND',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -638,7 +795,7 @@ describe('ActivationStep1', () => {
           status: 'NOT_FOUND',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -659,7 +816,7 @@ describe('ActivationStep1', () => {
           status: 'NOT_FOUND',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -680,7 +837,7 @@ describe('ActivationStep1', () => {
           status: 'NOT_SHIPPED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -713,17 +870,15 @@ describe('ActivationStep1', () => {
             status: 'ELIGIBLE',
           })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
         await user.click(await screen.findByRole('button', { name: 'Check again' }))
 
-        await waitFor(() => {
+        await waitFor(async () => {
           expect(verifyOrder).toHaveBeenCalledTimes(2)
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          await expectProgressiveAccountSetupVisible()
         })
         expect(
           screen.queryByRole('heading', { name: 'Your order is confirmed' }),
@@ -745,7 +900,7 @@ describe('ActivationStep1', () => {
               }),
           )
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -785,7 +940,7 @@ describe('ActivationStep1', () => {
               }),
           )
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -799,11 +954,7 @@ describe('ActivationStep1', () => {
 
         resolveRetry({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
         expect(
           screen.queryByRole('heading', { name: 'Your order is confirmed' }),
         ).not.toBeInTheDocument()
@@ -816,7 +967,7 @@ describe('ActivationStep1', () => {
           status: 'NOT_SHIPPED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -835,7 +986,7 @@ describe('ActivationStep1', () => {
           status: 'NOT_SHIPPED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -860,7 +1011,7 @@ describe('ActivationStep1', () => {
           status: 'ALREADY_CLAIMED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -889,7 +1040,7 @@ describe('ActivationStep1', () => {
           status: 'ALREADY_CLAIMED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -909,7 +1060,7 @@ describe('ActivationStep1', () => {
           status: 'ALREADY_CLAIMED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={onSignIn} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={onSignIn} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -932,7 +1083,7 @@ describe('ActivationStep1', () => {
           status: 'ALREADY_CLAIMED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={() => undefined} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={() => undefined} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -950,7 +1101,7 @@ describe('ActivationStep1', () => {
           status: 'ALREADY_CLAIMED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={() => undefined} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} onSignIn={() => undefined} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -968,7 +1119,7 @@ describe('ActivationStep1', () => {
           status: 'CANCELLED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -990,7 +1141,7 @@ describe('ActivationStep1', () => {
           status: 'CANCELLED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1011,7 +1162,7 @@ describe('ActivationStep1', () => {
           status: 'RETURNED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1036,7 +1187,7 @@ describe('ActivationStep1', () => {
           status: 'RETURNED',
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1061,7 +1212,7 @@ describe('ActivationStep1', () => {
           retryAfterMs: 30_000,
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1089,7 +1240,7 @@ describe('ActivationStep1', () => {
           retryAfterMs: null,
         })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1111,7 +1262,7 @@ describe('ActivationStep1', () => {
             status: 'ELIGIBLE',
           })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
 
         const field = screen.getByLabelText('Amazon order number')
         fireEvent.change(field, { target: { value: VALID_ORDER_ID } })
@@ -1136,9 +1287,11 @@ describe('ActivationStep1', () => {
         })
 
         expect(verifyOrder).toHaveBeenCalledTimes(2)
-        expect(
-          screen.getByRole('heading', { name: 'Your purchase is verified' }),
-        ).toBeInTheDocument()
+        await act(async () => {
+          await Promise.resolve()
+          await Promise.resolve()
+        })
+        expect(screen.getByTestId('activation-account-setup')).toBeInTheDocument()
       })
     })
 
@@ -1147,7 +1300,7 @@ describe('ActivationStep1', () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({ kind: 'service_unavailable' })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1177,17 +1330,15 @@ describe('ActivationStep1', () => {
             status: 'ELIGIBLE',
           })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
         await user.click(await screen.findByRole('button', { name: 'Try again' }))
 
-        await waitFor(() => {
+        await waitFor(async () => {
           expect(verifyOrder).toHaveBeenCalledTimes(2)
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          await expectProgressiveAccountSetupVisible()
         })
         expect(
           screen.queryByRole('heading', { name: "We can't check your order right now" }),
@@ -1207,7 +1358,7 @@ describe('ActivationStep1', () => {
               }),
           )
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1221,11 +1372,7 @@ describe('ActivationStep1', () => {
 
         resolveRetry({ kind: 'business_status', status: 'ELIGIBLE' })
 
-        await waitFor(() => {
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
-        })
+        await expectProgressiveAccountSetupVisible()
         expect(
           screen.queryByRole('heading', { name: "We can't check your order right now" }),
         ).not.toBeInTheDocument()
@@ -1243,7 +1390,7 @@ describe('ActivationStep1', () => {
               }),
           )
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1267,7 +1414,7 @@ describe('ActivationStep1', () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({ kind: 'service_unavailable' })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1289,7 +1436,7 @@ describe('ActivationStep1', () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({ kind: 'connection_error' })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1317,17 +1464,15 @@ describe('ActivationStep1', () => {
             status: 'ELIGIBLE',
           })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         await typeValidOrderId(user)
         await submitOrder(user)
 
         await user.click(await screen.findByRole('button', { name: 'Try again' }))
 
-        await waitFor(() => {
+        await waitFor(async () => {
           expect(verifyOrder).toHaveBeenCalledTimes(2)
-          expect(
-            screen.getByRole('heading', { name: 'Your purchase is verified' }),
-          ).toBeInTheDocument()
+          await expectProgressiveAccountSetupVisible()
         })
       })
     })
@@ -1337,7 +1482,7 @@ describe('ActivationStep1', () => {
         const user = userEvent.setup()
         const verifyOrder = createVerifyMock({ kind: 'invalid_order_id' })
 
-        render(<ActivationStep1 verifyOrder={verifyOrder} />)
+        await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
         const field = await typeValidOrderId(user)
         await submitOrder(user)
 
@@ -1355,6 +1500,925 @@ describe('ActivationStep1', () => {
         expect(verifyOrder).toHaveBeenCalledTimes(1)
         expectNoStorageWrites()
       })
+    })
+  })
+
+  describe('smart auto-verification (Checkpoint 2)', () => {
+    const AUTO_VERIFY_DEBOUNCE_MS = 300
+    const OTHER_VALID_ORDER_ID = '111-1111111-1111111'
+    const OTHER_VALID_ORDER_ID_DIGITS = '11111111111111111'
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function setOrderIdValue(value: string) {
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.change(field, { target: { value } })
+      return field
+    }
+
+    async function advanceDebounce(extraMs = 0) {
+      await act(async () => {
+        vi.advanceTimersByTime(AUTO_VERIFY_DEBOUNCE_MS + extraMs)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+    }
+
+    it('does not auto-verify an incomplete Order ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue('205-1234567-123')
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify a malformed Order ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      // 16 digits — structurally invalid (a complete Order ID has 17).
+      setOrderIdValue('2051234567123456')
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('auto-verifies exactly once after a complete valid Order ID is typed', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      // Nothing before the debounce elapses.
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('auto-verifies once for a pasted Order ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? 'Order # 205-1234567-1234567' : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('auto-verifies once when Paste reads a valid clipboard Order ID', async () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(VALID_ORDER_ID_DIGITS),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      mockCreateActivationContext.mockResolvedValue({ kind: 'created' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByLabelText('Amazon order number')).toHaveValue(VALID_ORDER_ID)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+      vi.unstubAllGlobals()
+    })
+
+    it('does not paste or auto-verify when the dedicated Paste button reads overlong clipboard text', async () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(`${VALID_ORDER_ID_DIGITS}99`),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByLabelText('Amazon order number')).toHaveValue('')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /No Amazon Order ID found in your clipboard/i,
+      )
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+      expect(mockCreateActivationContext).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
+
+    it('normalizes surrounding text, spaces and dashes then auto-verifies the canonical value', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = setOrderIdValue('  Order # 205 1234567 1234567  ')
+      expect(field).toHaveValue(VALID_ORDER_ID)
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('collapses repeated identical input events into a single verification', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      // Digits then the already-canonical value: mirrors autofill/mobile input
+      // that re-fires change events for the same normalized Order ID.
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      setOrderIdValue(VALID_ORDER_ID)
+
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not repeatedly verify the same unchanged Order ID over time', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // Well beyond the debounce window: no auto re-verification of the same value.
+      await advanceDebounce(5_000)
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('auto-verifies again when the Order ID is changed to a different valid value', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'business_status', status: 'NOT_FOUND' })
+        .mockResolvedValueOnce({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // NOT_FOUND returns to the entry field with the value preserved.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check the number' }))
+        await Promise.resolve()
+      })
+
+      setOrderIdValue(OTHER_VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(2)
+      expect(verifyOrder).toHaveBeenLastCalledWith(OTHER_VALID_ORDER_ID)
+    })
+
+    it('does not duplicate a pending auto-verification when the manual button is used', async () => {
+      vi.useFakeTimers()
+      const { verifyOrder, resolveVerify } = createPendingVerifyMock()
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+
+      // Manual submit before the debounce elapses.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check my order' }))
+        await Promise.resolve()
+      })
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // The previously-armed auto-verify timer must have been cancelled.
+      await advanceDebounce(500)
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
+      await act(async () => {
+        await Promise.resolve()
+      })
+    })
+
+    it('does not auto-retry a transient failure but allows a manual retry', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'service_unavailable' })
+        .mockResolvedValueOnce({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      // No self-driven retry, even long after the failure.
+      await advanceDebounce(5_000)
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+        await Promise.resolve()
+      })
+      expect(verifyOrder).toHaveBeenCalledTimes(2)
+    })
+
+    it('auto-verifies a canonical dashed Order ID entered via change', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID)
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('does not auto-verify when pasted free-form text contains extra digits', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `Order # ${VALID_ORDER_ID} ref 99` : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify 18 bare digits even when the field displays 17', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('blocks manual submit after native paste with an overlong raw source', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}999` : '',
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdRawTooLong)
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Check my order' }))
+        await Promise.resolve()
+      })
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+      expect(mockCreateActivationContext).not.toHaveBeenCalled()
+    })
+
+    it('does not populate the field when dedicated Paste reads an overlong raw source', async () => {
+      vi.useFakeTimers()
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(`${VALID_ORDER_ID_DIGITS}999`),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      const field = screen.getByLabelText('Amazon order number')
+      expect(field).toHaveValue('')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /No Amazon Order ID found in your clipboard/i,
+      )
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+
+      await act(async () => {
+        fireEvent.submit(screen.getByTestId('activation-entry-form'))
+        await Promise.resolve()
+      })
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+      expect(mockCreateActivationContext).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
+
+    it('does not show too-long error for a clean valid paste before blur or submit', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) => (type === 'text' ? VALID_ORDER_ID_DIGITS : ''),
+        },
+      })
+
+      expect(field).toHaveValue(VALID_ORDER_ID)
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
+    })
+
+    it('clears too-long error after the user re-enters a valid 17-digit source', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+
+      expect(screen.getByRole('alert')).toHaveTextContent(VALIDATION_MESSAGES.orderIdRawTooLong)
+
+      fireEvent.change(field, { target: { value: VALID_ORDER_ID_DIGITS } })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
+
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('allows manual submit for a normal exact 17-digit entry', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      const submit = screen.getByRole('button', { name: 'Check my order' })
+      expect(submit).toBeEnabled()
+
+      await act(async () => {
+        fireEvent.click(submit)
+        await Promise.resolve()
+      })
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not auto-verify when extra digits follow a valid ID separated by spaces', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(`${VALID_ORDER_ID} 55`)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-verify when extra digits follow a valid ID separated by text', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(`Order ${VALID_ORDER_ID} ref 99`)
+      await advanceDebounce(500)
+
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('auto-verifies after correcting an overlong source to exactly 17 digits', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      fireEvent.change(field, { target: { value: VALID_ORDER_ID_DIGITS } })
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('auto-verifies after clearing an overlong paste and re-entering a valid ID', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `Order # ${VALID_ORDER_ID} ref 99` : '',
+        },
+      })
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+
+      fireEvent.change(field, { target: { value: '' } })
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('does not duplicate verification while a request is in flight', async () => {
+      vi.useFakeTimers()
+      const { verifyOrder, resolveVerify } = createPendingVerifyMock()
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      const form = screen.getByTestId('activation-entry-form')
+      await act(async () => {
+        fireEvent.submit(form)
+        await Promise.resolve()
+      })
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
+      await act(async () => {
+        await Promise.resolve()
+      })
+    })
+
+    it('still creates activation context after auto-verified eligible result', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      const createContext = vi.fn().mockResolvedValue({ kind: 'created' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} createContext={createContext} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      await advanceDebounce()
+
+      await waitFor(() => {
+        expect(createContext).toHaveBeenCalledWith(VALID_ORDER_ID)
+      })
+      await expectProgressiveAccountSetupVisible()
+    })
+  })
+
+  describe('initial activation context resolution', () => {
+    it('hides the Order ID form while the initial context GET is pending', async () => {
+      createPendingContextResolutionMock()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+        { waitForContext: false },
+      )
+
+      expect(screen.getByTestId('activation-context-restoring')).toBeInTheDocument()
+      expect(screen.getByText('Restoring your activation…')).toBeInTheDocument()
+      expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Amazon order number')).not.toBeInTheDocument()
+    })
+
+    it('resumes Step 2 when pending resolution completes VALID without Step 1 interaction', async () => {
+      const { resolveContext } = createPendingContextResolutionMock()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+        { waitForContext: false },
+      )
+
+      expect(screen.getByTestId('activation-context-restoring')).toBeInTheDocument()
+
+      await act(async () => {
+        resolveContext({ kind: 'status', status: 'VALID' })
+        await Promise.resolve()
+      })
+
+      await expectProgressiveAccountSetupVisible()
+      expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+    })
+
+    it('shows Step 1 when pending resolution completes NONE', async () => {
+      const { resolveContext } = createPendingContextResolutionMock()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+        { waitForContext: false },
+      )
+
+      await act(async () => {
+        resolveContext({ kind: 'status', status: 'NONE' })
+        await Promise.resolve()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('activation-context-restoring')).not.toBeInTheDocument()
+    })
+
+    it('shows Step 1 when pending resolution completes EXPIRED', async () => {
+      const { resolveContext } = createPendingContextResolutionMock()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+        { waitForContext: false },
+      )
+
+      await act(async () => {
+        resolveContext({ kind: 'status', status: 'EXPIRED' })
+        await Promise.resolve()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('shows Step 1 after context resolution error so verification remains available', async () => {
+      mockResolveActivationContext.mockResolvedValue({ kind: 'connection_error' })
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'NOT_FOUND' })
+      const user = userEvent.setup()
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('activation-context-restoring')).not.toBeInTheDocument()
+
+      await typeValidOrderId(user)
+      await submitOrder(user)
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('heading', { name: "We can't verify that order" }),
+        ).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('progressive activation (Checkpoint 3)', () => {
+    it('does not reveal account setup before verification completes', async () => {
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('does not reveal account setup on verification failure', async () => {
+      const user = userEvent.setup()
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'NOT_FOUND' })}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('heading', { name: "We can't verify that order" }),
+        ).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('resets to order entry when Use another order is chosen from progressive state', async () => {
+      const user = userEvent.setup()
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+      await expectProgressiveAccountSetupVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Use another order' }))
+
+      expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('resumes progressive account setup from VALID server context alone', async () => {
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'VALID',
+      })
+
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+
+      await expectProgressiveAccountSetupVisible()
+      expect(screen.queryByTestId('activation-entry-form')).not.toBeInTheDocument()
+    })
+
+    it('does not resume progressive setup when entry was deferred after Use another order', async () => {
+      sessionStorage.setItem('signmaster_activation_entry_deferred', '1')
+      mockResolveActivationContext.mockResolvedValue({
+        kind: 'status',
+        status: 'VALID',
+      })
+
+      await renderActivationStep1(<ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />)
+
+      await waitFor(() => {
+        expect(mockResolveActivationContext).toHaveBeenCalled()
+      })
+      expect(screen.getByTestId('activation-entry-form')).toBeInTheDocument()
+      expect(screen.queryByTestId('activation-account-setup')).not.toBeInTheDocument()
+    })
+
+    it('passes parent context resolution to inline account setup (no duplicate child GET)', async () => {
+      const user = userEvent.setup()
+      const createContext = vi.fn().mockImplementation(async () => {
+        mockResolveActivationContext.mockResolvedValue({
+          kind: 'status',
+          status: 'VALID',
+        })
+        return { kind: 'created' }
+      })
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })}
+          createContext={createContext}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+      await expectProgressiveAccountSetupVisible()
+
+      // Mount + post-create refresh only; inline setup must not add a third GET.
+      expect(mockResolveActivationContext).toHaveBeenCalledTimes(2)
+    })
+
+    it('exposes sign-in from the progressive account section', async () => {
+      const user = userEvent.setup()
+      const onSignIn = vi.fn()
+      render(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })}
+          onSignIn={onSignIn}
+        />,
+      )
+      await typeValidOrderId(user)
+      await submitOrder(user)
+      await expectProgressiveAccountSetupVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Sign in' }))
+      expect(onSignIn).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('activation entry customer paths', () => {
+    it('shows existing-user Sign in copy and calls onSignIn once from the entry form', async () => {
+      const user = userEvent.setup()
+      const onSignIn = vi.fn()
+      await renderActivationStep1(
+        <ActivationStep1
+          verifyOrder={createVerifyMock({ kind: 'service_unavailable' })}
+          onSignIn={onSignIn}
+        />,
+      )
+
+      expect(screen.getByText(/Already have an account\?/i)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Sign in' }))
+      expect(onSignIn).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not show entry Sign in without onSignIn', async () => {
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+      )
+
+      expect(screen.queryByText(/Already have an account\?/i)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
+    })
+
+    it('opens Show me where on an empty focused field without required validation', async () => {
+      const user = userEvent.setup()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+      )
+
+      const field = screen.getByLabelText('Amazon order number')
+      await user.click(field)
+      await user.click(screen.getByRole('button', { name: 'Show me where' }))
+
+      expect(getHelpDialog()).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+    })
+
+    it('shows required validation only after an explicit empty form submit', async () => {
+      const user = userEvent.setup()
+      await renderActivationStep1(
+        <ActivationStep1 verifyOrder={createVerifyMock({ kind: 'service_unavailable' })} />,
+      )
+
+      const field = screen.getByLabelText('Amazon order number')
+      await user.click(field)
+      await user.click(screen.getByRole('button', { name: 'Show me where' }))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+      fireEvent.submit(screen.getByTestId('activation-entry-form'))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        VALIDATION_MESSAGES.orderIdRequired,
+      )
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+    })
+  })
+
+  describe('Check my order gating (orderIdSubmittable)', () => {
+    const AUTO_VERIFY_DEBOUNCE_MS = 300
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function setOrderIdValue(value: string) {
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.change(field, { target: { value } })
+      return field
+    }
+
+    async function advanceDebounce(extraMs = 0) {
+      await act(async () => {
+        vi.advanceTimersByTime(AUTO_VERIFY_DEBOUNCE_MS + extraMs)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+    }
+
+    it('keeps Check my order disabled for empty, partial, and malformed input', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const submit = screen.getByRole('button', { name: 'Check my order' })
+      expect(submit).toBeDisabled()
+
+      setOrderIdValue('205-1234567-123')
+      expect(submit).toBeDisabled()
+
+      setOrderIdValue('2051234567123456')
+      expect(submit).toBeDisabled()
+
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('enables Check my order for a complete valid Order ID and auto-verifies once', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
+
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+      expect(verifyOrder).toHaveBeenCalledWith(VALID_ORDER_ID)
+    })
+
+    it('shows checking state instead of the enabled submit action during verification', async () => {
+      const { verifyOrder, resolveVerify } = createPendingVerifyMock()
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      setOrderIdValue(VALID_ORDER_ID_DIGITS)
+      fireEvent.submit(screen.getByTestId('activation-entry-form'))
+
+      expectCheckingButton(screen.getByRole('button', { name: 'Checking your order…' }))
+      expect(screen.queryByRole('button', { name: 'Check my order' })).not.toBeInTheDocument()
+
+      resolveVerify({ kind: 'business_status', status: 'ELIGIBLE' })
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: 'Preparing account setup…' }),
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('keeps Check my order disabled for overlong raw paste and does not verify', async () => {
+      vi.useFakeTimers()
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      const field = screen.getByLabelText('Amazon order number')
+      fireEvent.paste(field, {
+        clipboardData: {
+          getData: (type: string) =>
+            type === 'text' ? `${VALID_ORDER_ID_DIGITS}9` : '',
+        },
+      })
+
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeDisabled()
+      await advanceDebounce(500)
+      expect(verifyOrder).not.toHaveBeenCalled()
+    })
+
+    it('auto-verifies once after dedicated paste of a complete valid Order ID', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      vi.stubGlobal('isSecureContext', true)
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          readText: vi.fn().mockResolvedValue(VALID_ORDER_ID_DIGITS),
+        },
+        configurable: true,
+      })
+
+      const verifyOrder = createVerifyMock({ kind: 'business_status', status: 'ELIGIBLE' })
+      await renderActivationStep1(<ActivationStep1 verifyOrder={verifyOrder} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Paste' }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(screen.getByRole('button', { name: 'Check my order' })).toBeEnabled()
+      await advanceDebounce()
+      expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+      vi.unstubAllGlobals()
     })
   })
 })

@@ -96,7 +96,7 @@ The app helps verified purchasers activate their entitlement, create an account,
 |------|---------|
 | **Vitest** | Unit tests and test runner |
 | **React Testing Library** | Component tests |
-| **Playwright** | End-to-end (E2E) tests in `e2e/` — installed and configured; runs locally via `npm run test:e2e` *(not yet in CI)* |
+| **Playwright** | End-to-end (E2E) tests in `e2e/` — `npm run test:e2e` locally and in GitHub Actions CI |
 
 Every new feature or behaviour change must include appropriate automated tests.
 
@@ -403,6 +403,13 @@ Customer scans QR code on product packaging
       • order has not already been claimed
   → returns activation status to frontend
 ```
+
+**Physical product activation URL:** SignMaster pack inserts and cards direct customers to the
+permanent public URL **`https://signmastercards.co.uk/activate`** — no query parameters, Amazon
+Order ID, user identity, activation token, entitlement data, or per-pack identifier in the link.
+Purchase eligibility is verified **server-side** after the customer enters their Amazon Order ID.
+`/activate` is a backwards-compatible public entry point and must not be renamed or removed without
+a permanent redirect.
 
 **Per-item retained quantity** (building block):
 
@@ -982,19 +989,21 @@ Frontend validation improves user experience. All security and business validati
 
 ### Activation endpoint security
 
-Both `POST /api/activation/verify` and `POST /api/activation/claim` must implement:
+Before **production release**, both `POST /api/activation/verify` and `POST /api/activation/claim` must implement:
 
-| Control | Requirement |
-|---------|-------------|
+| Control | Production requirement |
+|---------|------------------------|
 | Server-side validation | Authoritative format and business-rule checks on every request |
 | Rate limiting | Limit repeated attempts per IP and/or per order ID to prevent abuse |
 | Attempt limiting | Cap failed verification/claim attempts within a time window |
 | Request size limits | Reject oversized or malformed request bodies |
 | Safe logging | Log request outcomes for monitoring; never log credentials, tokens, or unnecessary Amazon order detail |
 
-`/verify` is a pre-auth endpoint and is especially exposed to abuse — rate limiting is mandatory.
+`/verify` is a pre-auth endpoint and is especially exposed to abuse — **server-side rate limiting and attempt caps are mandatory before production release** (see also `PRE_PRODUCTION_CHECKLIST.md`).
 
-`/claim` requires authentication (see Claim endpoint security rules) in addition to the controls above.
+**Current implementation / checkpoint status (CP1–CP9):** Server-side validation and eligibility checks exist on `/verify` and `/claim` today. **Server-side rate limiting, failed-attempt caps, and request-size hardening for the pre-auth `/verify` endpoint are not implemented yet**; they are intentionally deferred to **CP10 production hardening** and are **not** part of the CP1–CP9 acceptance gate. Manual acceptance scenario PV-14 in [`docs/manual-auth-activation-acceptance.md`](./docs/manual-auth-activation-acceptance.md) records this deferral.
+
+`/claim` requires authentication (see Claim endpoint security rules) in addition to the production controls above.
 
 ---
 
@@ -1116,7 +1125,9 @@ Merge to main
 - Initial CI does **not** use production Supabase credentials.
 - Amazon integration scripts (`test:amazon-*`, `sync:amazon`) are **not** run by CI.
 - Production order synchronization is **separate from CI** (scheduled jobs, not PR checks).
-- Playwright E2E can be added to CI later.
+- CI uses **Node 24 LTS** (`node-version: 24`): `npm ci` → `npm run test:run` (Vitest) → `npm run build` → Playwright Chromium E2E (`npm run test:e2e`).
+- App Vitest uses `src/test/setup.ts` plus a Web Storage polyfill so incomplete Node globals (e.g. local Node 26) do not break jsdom tests.
+- Local pre-PR review does **not** need to replay the full CI job in Docker; GitHub Actions runs the full Playwright suite on Ubuntu.
 - Local Supabase integration tests can be added to CI later.
 
 ### Local development

@@ -9,6 +9,8 @@ vi.mock('../lib/auth/authService', () => ({
     signOut: vi.fn(),
     signUp: vi.fn(),
     signIn: vi.fn(),
+    signInWithGoogle: vi.fn(),
+    signInWithApple: vi.fn(),
     requestPasswordReset: vi.fn(),
     updatePassword: vi.fn(),
     getCurrentUser: vi.fn(),
@@ -26,7 +28,7 @@ vi.mock('../lib/supabase/client', () => ({
 }))
 
 describe('App', () => {
-  it('renders the activation Step 1 screen at /activate', () => {
+  it('renders the activation Step 1 screen at /activate', async () => {
     render(
       <MemoryRouter initialEntries={['/activate']}>
         <App />
@@ -36,9 +38,9 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { name: 'Unlock your SignMaster app' }),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText('Amazon order number')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Amazon order number')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Check my order' }),
+      await screen.findByRole('button', { name: 'Check my order' }),
     ).toBeInTheDocument()
   })
 

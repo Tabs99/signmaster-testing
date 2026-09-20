@@ -9,6 +9,11 @@ Supabase (PostgreSQL + Auth) database. Amazon Selling Partner API access is **se
 and is never called during customer activation.
 
 - **Production URL:** https://signmastercards.co.uk
+- **Physical product activation URL:** inserts and cards in SignMaster packs direct customers to
+  `https://signmastercards.co.uk/activate` — a fixed, query-free public entry point (no Amazon Order
+  ID, user identity, token, entitlement, or per-pack identifier in the URL). Purchase verification
+  happens server-side after the customer enters their Amazon Order ID. `/activate` is
+  backwards-compatible; do not rename or remove it without a permanent redirect.
 - **Deep architecture reference:** [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Manual auth/activation acceptance pack:** [`docs/manual-auth-activation-acceptance.md`](./docs/manual-auth-activation-acceptance.md)
 - **Pre-production checklist:** [`PRE_PRODUCTION_CHECKLIST.md`](./PRE_PRODUCTION_CHECKLIST.md)
@@ -46,7 +51,7 @@ Status is derived from the code and tests in this repository, not from a roadmap
   implemented yet; see the deferred note in
   [`docs/manual-auth-activation-acceptance.md`](./docs/manual-auth-activation-acceptance.md).
 - **Cross-browser E2E (Firefox/WebKit)** — deferred; Playwright currently runs Chromium only.
-- **E2E in CI** — Playwright runs locally; CI runs unit/component/server tests and the build only.
+- **CI** — GitHub Actions on **Node 24 LTS**: `npm ci`, Vitest, production build, Playwright Chromium E2E (desktop + mobile). Local **Node 26** is fine for Vitest thanks to the test Web Storage polyfill in `src/test/setup.ts`.
 
 Do not treat deferred items as complete.
 
@@ -123,7 +128,7 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design, security model, 
 
 | Tool | Version / notes | Verify |
 |------|-----------------|--------|
-| Node.js | 20+ (CI uses Node 20; there is no `.nvmrc` or `engines` field) | `node -v` |
+| Node.js | 24 LTS for CI parity; local 24+ (26 supported for Vitest with repo test setup) | `node -v` |
 | npm | Ships with Node | `npm -v` |
 | Git | Any recent version | `git --version` |
 | Docker | **Required** to run local Supabase (`supabase start` runs containers) | `docker --version` |
@@ -204,6 +209,34 @@ You can re-print these values any time:
 ```bash
 npx supabase status
 ```
+
+### Local OAuth (Google / Apple, optional)
+
+Google and Apple are enabled in [`supabase/config.toml`](./supabase/config.toml) for CP9 manual
+testing. Credentials are **not** required for a normal local stack (email/password, activation, and
+so on).
+
+The Supabase CLI substitutes `env(...)` in `config.toml` only from a **project-root `.env` file**
+and/or exported shell variables — **not** from `.env.local` (which `npm run dev:full` uses). If OAuth
+vars are missing at `supabase start`, authorize URLs contain the literal text `env(SUPABASE_AUTH_EXTERNAL_...)`,
+which produces Google `401 invalid_client` and Apple `403`.
+
+1. Create OAuth clients in Google Cloud Console and Apple Developer (see [`.env.example`](./.env.example)
+   comments for redirect URLs).
+2. Add `SUPABASE_AUTH_EXTERNAL_*` values to `.env.local` and mirror them in project-root `.env`, or
+   run `ln -sf .env.local .env` once (both paths are gitignored).
+3. Restart: `npx supabase stop` && `npx supabase start`.
+4. Confirm (no secrets in output): open
+   `http://127.0.0.1:54321/auth/v1/authorize?provider=google&redirect_to=http://localhost:4200/sign-in`
+   and check the redirect uses a `*.apps.googleusercontent.com` client id and
+   `redirect_uri=http://127.0.0.1:54321/auth/v1/callback`.
+
+**Google** can work fully on local HTTP once the Web client and env vars are correct.
+
+**Apple** web Sign in typically requires **HTTPS** return URLs registered with Apple. Local GoTrue uses
+`http://127.0.0.1:54321/auth/v1/callback`, which Apple Developer may refuse or reject at runtime. For
+Apple OAuth, use an HTTPS tunnel to that callback or test against a hosted Supabase project’s
+`https://<project-ref>.supabase.co/auth/v1/callback`.
 
 ### Reset / migrate the database
 
@@ -311,7 +344,8 @@ free). No separate proxy is configured; a single process serves the app in each 
 2. `npm run dev:full` for full-stack work, or `npm run dev` for pure UI work.
 3. Make a small, scoped change.
 4. Run focused tests (e.g. `npm run test:run` for the affected area, `npm run test:e2e` for flows).
-5. Before opening a PR: `npm run test:run`, `npm run build`, and `git diff --check`.
+5. Before opening a PR: `npm run test:run`, `npm run build`, focused Playwright where relevant,
+   and `git diff --check` (full E2E runs in CI).
 6. `npx supabase stop` when you are done.
 
 ---
@@ -477,8 +511,10 @@ Verified against [`ARCHITECTURE.md`](./ARCHITECTURE.md) and `.cursor/rules/revie
 branch  →  small scoped change  →  tests  →  build  →  git diff --check  →  PR  →  review  →  merge
 ```
 
-- **Do not push directly to `main`.** Open a pull request; CI runs `npm run test:run` and
-  `npm run build` on PRs to `main`.
+- **Do not push directly to `main`.** Open a pull request; CI on **Node 24 LTS** runs
+  `npm ci`, `npm run test:run`, `npm run build`, and Playwright Chromium E2E (`npm run test:e2e`).
+  Local pre-PR checks usually match with `npm run test:run`, `npm run build`, and focused E2E —
+  you do not need to replay the full CI job in Docker.
 - Keep PR scope small and focused; do not refactor unrelated files.
 - **Do not weaken, delete, or bypass existing tests** to make work pass.
 - Every behaviour change should include appropriate automated tests.
@@ -521,7 +557,7 @@ Do not place production secrets in this repository.
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| `npm ci` fails | Ensure Node 20+ and a clean `node_modules`; delete `node_modules` and retry. |
+| `npm ci` fails | Use Node 24+ locally (CI uses 24 LTS); run `npm ci` on your host OS after Docker installs (Rollup native binaries are platform-specific). |
 | Supabase will not start | Docker is not running, or ports 54321–54324 are busy. Start Docker; `npx supabase stop` then `start`. |
 | App loads but API calls fail | You are running `npm run dev` (frontend only). Use `npm run dev:full` for `/api/*`. |
 | API routes return 500 (service errors) | `SUPABASE_SECRET_KEY` missing/incorrect in `.env.local`. |

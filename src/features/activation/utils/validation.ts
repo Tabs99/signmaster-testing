@@ -4,10 +4,22 @@ export const VALIDATION_MESSAGES = {
   orderIdRequired: 'Enter your Amazon order number.',
   orderIdInvalid:
     "That doesn't look like an Amazon order number. It has 17 digits, for example 205-1234567-1234567.",
+  orderIdRawTooLong:
+    'That order number has too many digits. Enter exactly 17 digits, for example 205-1234567-1234567.',
 } as const
 
 export function countOrderIdDigits(value: string): number {
   return value.replace(/\D/g, '').length
+}
+
+/** True when the raw input (before display truncation) contains exactly 17 digits. */
+export function isExactSeventeenDigitSource(raw: string): boolean {
+  return countOrderIdDigits(raw) === 17
+}
+
+/** False when the raw source contains more than 17 digits (display may still be capped). */
+export function isOrderIdRawSourceWithinLimit(raw: string): boolean {
+  return countOrderIdDigits(raw) <= 17
 }
 
 export function isValidOrderId(value: string): boolean {

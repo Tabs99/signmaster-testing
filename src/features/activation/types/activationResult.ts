@@ -17,8 +17,10 @@ export type ActivationResultKind =
 export interface ActivationStep1Props {
   verifyOrder?: (orderId: string) => Promise<ActivationVerifyResult>
   createContext?: (orderId: string) => Promise<ActivationContextCreateResult>
+  /** @deprecated Progressive activation reveals account setup inline; optional legacy hook. */
   onContinueToAccount?: () => void
   onSignIn?: () => void
+  onEnterApp?: () => void
 }
 
 export interface ActivationStatusContent {

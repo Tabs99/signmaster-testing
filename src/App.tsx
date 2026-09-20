@@ -26,8 +26,8 @@ function AppRoutes() {
         path="/activate"
         element={
           <ActivationStep1
-            onContinueToAccount={() => navigate('/create-account')}
             onSignIn={() => navigate('/sign-in')}
+            onEnterApp={enterApp}
           />
         }
       />

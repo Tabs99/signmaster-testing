@@ -1,8 +1,20 @@
+import type { ActivationContextResolutionStatus } from '../../../lib/api/activationContextApi'
 import type { AuthService } from '../../../lib/auth/authService'
 import type { SignUpResult } from '../../../lib/auth/types'
 
+export type ActivationContextResolutionSnapshot = {
+  status: ActivationContextResolutionStatus | null
+  isLoading: boolean
+  error: boolean
+  retry: () => void
+}
+
+export type ActivationAccountSetupVariant = 'page' | 'progressive'
+
 export interface CreateAccountScreenProps {
   signUp?: AuthService['signUp']
+  signInWithGoogle?: AuthService['signInWithGoogle']
+  signInWithApple?: AuthService['signInWithApple']
   /**
    * Builds the account-confirmation `emailRedirectTo` URL, embedding the opaque
    * cross-device continuation reference when an activation context exists.
@@ -19,8 +31,18 @@ export interface CreateAccountScreenProps {
   onEnterApp?: () => void
 }
 
+export interface ActivationAccountSetupProps extends CreateAccountScreenProps {
+  variant?: ActivationAccountSetupVariant
+  /** When set (progressive /activate), avoids a second context GET in the child. */
+  activationContextResolution?: ActivationContextResolutionSnapshot
+  /** Verified Order ID from the in-session activation flow (progressive Step 2 only). */
+  verifiedOrderId?: string
+}
+
 export interface SignInScreenProps {
   signIn?: AuthService['signIn']
+  signInWithGoogle?: AuthService['signInWithGoogle']
+  signInWithApple?: AuthService['signInWithApple']
   onCreateAccount?: () => void
   onForgotPassword?: () => void
   /**
@@ -56,6 +78,8 @@ export type CreateAccountStatus =
   | 'loading'
   | 'existing-account'
   | 'email-confirmation'
+  | 'auth-sync-failed'
+  | 'auth-sync-retrying'
   | 'done'
 
 export type SignInStatus = 'idle' | 'loading' | 'done'

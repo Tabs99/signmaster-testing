@@ -14,30 +14,58 @@ import {
   type ActivationStep1Props,
   type ActivationUiPhase,
 } from '../types/activationResult'
-import { isValidOrderId } from '../utils/validation'
+import {
+  clearActivationEntryDeferral,
+  deferActivationEntryResume,
+  isActivationEntryDeferred,
+} from '../utils/progressiveActivationSession'
+import {
+  isValidOrderId,
+  VALIDATION_MESSAGES,
+} from '../utils/validation'
+
+/**
+ * Trailing debounce before auto-verifying a complete, structurally valid Order
+ * ID. Short enough to feel instant, long enough to coalesce fast typing/paste
+ * into a single verification.
+ */
+const AUTO_VERIFY_DEBOUNCE_MS = 300
 import ActivationShell from './ActivationShell'
 import ActivationStatusPlate from './ActivationStatusPlate'
 import BrandLockup from './BrandLockup'
 import CheckingOrderButton from './CheckingOrderButton'
 import HelpSheet from './HelpSheet'
+import LoadingSpinner from './LoadingSpinner'
 import KeylinePlate from './KeylinePlate'
 import OrderIdField from './OrderIdField'
 import PrimaryButton from './PrimaryButton'
+import ActivationAccountSetup from '../../account/components/ActivationAccountSetup'
+import { useActivationContextResolution } from '../hooks/useActivationContextResolution'
 
 export default function ActivationStep1({
   verifyOrder = verifyActivationOrder,
   createContext = createActivationContext,
-  onContinueToAccount,
+  onContinueToAccount: _legacyOnContinueToAccount,
   onSignIn,
+  onEnterApp,
 }: ActivationStep1Props = {}) {
+  void _legacyOnContinueToAccount
   const orderIdRef = useRef<HTMLInputElement>(null)
   const showMeWhereRef = useRef<HTMLButtonElement>(null)
   const getSupportRef = useRef<HTMLButtonElement>(null)
   const helpReturnFocusRef = useRef<HTMLElement | null>(null)
   const verifyInFlightRef = useRef(false)
   const contextCreateInFlightRef = useRef(false)
+  // The last normalized Order ID for which a verification was *started* (manual
+  // or automatic). Lets auto-verification skip a value that has already been
+  // requested, so the same unchanged Order ID is never verified twice.
+  const lastRequestedOrderIdRef = useRef<string | null>(null)
+  const eligibleContextCreateStartedRef = useRef(false)
 
   const [orderId, setOrderId] = useState('')
+  const [accountSetupUnlocked, setAccountSetupUnlocked] = useState(false)
+  const [autoVerifyEligible, setAutoVerifyEligible] = useState(false)
+  const [orderIdSourceWithinLimit, setOrderIdSourceWithinLimit] = useState(true)
   const [fieldTouched, setFieldTouched] = useState(false)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [phase, setPhase] = useState<ActivationUiPhase>('entry')
@@ -50,11 +78,31 @@ export default function ActivationStep1({
   const [helpInitialSection, setHelpInitialSection] = useState<HelpSheetSection | null>(0)
   const [helpTitle, setHelpTitle] = useState('Finding your Amazon order number')
   const [contextCreating, setContextCreating] = useState(false)
+  const activationContextResolution = useActivationContextResolution()
+  const { status: resolvedContextStatus, isLoading: contextResolving } =
+    activationContextResolution
+  const isInitialContextRestoring =
+    !accountSetupUnlocked &&
+    (contextResolving ||
+      (resolvedContextStatus === 'VALID' && !isActivationEntryDeferred()))
 
   const orderIdValid = isValidOrderId(orderId)
-  const showOrderIdError = (fieldTouched || submitAttempted) && !orderIdValid
+  const orderIdSubmittable = orderIdValid && orderIdSourceWithinLimit
+  const overlongRawSource = orderIdValid && !orderIdSourceWithinLimit
+  const showOrderIdError =
+    (fieldTouched || submitAttempted || overlongRawSource) && !orderIdSubmittable
+  const orderIdErrorOverride =
+    showOrderIdError && orderIdValid && !orderIdSourceWithinLimit
+      ? VALIDATION_MESSAGES.orderIdRawTooLong
+      : null
   const isChecking = phase === 'checking'
-  const canSubmit = orderIdValid && !isChecking
+  const isEligiblePreparing =
+    resultKind === 'eligible' && !accountSetupUnlocked && phase === 'result'
+  const canSubmit =
+    orderIdSubmittable &&
+    !isChecking &&
+    !isEligiblePreparing &&
+    !contextResolving
 
   useEffect(() => {
     if (resultKind !== 'rate_limited' || rateLimitRetryAt === null) {
@@ -94,6 +142,7 @@ export default function ActivationStep1({
       }
 
       verifyInFlightRef.current = true
+      lastRequestedOrderIdRef.current = orderIdToVerify
       setPhase('checking')
 
       try {
@@ -105,6 +154,64 @@ export default function ActivationStep1({
     },
     [verifyOrder],
   )
+
+  // Auto-verify once a complete, structurally valid Order ID has settled. The
+  // frontend never verifies incomplete/malformed input, never verifies on every
+  // keystroke (trailing debounce), and never re-verifies the same normalized
+  // value (dedupe latch). Entering the `checking` phase re-runs this effect and
+  // its cleanup cancels any pending timer, so a manual submit cannot race a
+  // queued auto-verification into a duplicate request.
+  useEffect(() => {
+    if (orderId === '') {
+      // A deliberate clear (e.g. "Use another order") resets the latch so a
+      // fresh, intentional re-entry can verify again.
+      lastRequestedOrderIdRef.current = null
+      return
+    }
+
+    if (
+      phase !== 'entry' ||
+      contextResolving ||
+      !orderIdSubmittable ||
+      !autoVerifyEligible ||
+      verifyInFlightRef.current ||
+      orderId === lastRequestedOrderIdRef.current
+    ) {
+      return
+    }
+
+    const timeoutId = globalThis.setTimeout(() => {
+      void runVerification(orderId)
+    }, AUTO_VERIFY_DEBOUNCE_MS)
+
+    return () => globalThis.clearTimeout(timeoutId)
+  }, [
+    orderId,
+    orderIdSubmittable,
+    autoVerifyEligible,
+    contextResolving,
+    phase,
+    runVerification,
+  ])
+
+  // Resume the progressive account step after refresh/navigation when a valid
+  // HttpOnly activation context already exists (direct /activate return visits).
+  useEffect(() => {
+    if (contextResolving || accountSetupUnlocked) {
+      return
+    }
+
+    if (
+      resolvedContextStatus === 'VALID' &&
+      !isActivationEntryDeferred()
+    ) {
+      eligibleContextCreateStartedRef.current = true
+      setAccountSetupUnlocked(true)
+      setPhase('result')
+      setResultKind('eligible')
+      setPresentedResultKind('eligible')
+    }
+  }, [accountSetupUnlocked, contextResolving, resolvedContextStatus])
 
   async function applyVerificationResult(result: ActivationVerifyResult) {
     if (result.kind === 'invalid_order_id') {
@@ -144,8 +251,8 @@ export default function ActivationStep1({
     setSubmitAttempted(true)
     setFieldTouched(true)
 
-    if (!orderIdValid || isChecking) {
-      if (!orderIdValid) {
+    if (!orderIdSubmittable || isChecking || isEligiblePreparing || contextResolving) {
+      if (!orderIdSubmittable) {
         orderIdRef.current?.focus()
       }
       return
@@ -157,7 +264,11 @@ export default function ActivationStep1({
   function returnToEntry(options?: { clearOrderId?: boolean; focusField?: boolean }) {
     if (options?.clearOrderId) {
       setOrderId('')
+      setAutoVerifyEligible(false)
+      setOrderIdSourceWithinLimit(true)
     }
+    setAccountSetupUnlocked(false)
+    eligibleContextCreateStartedRef.current = false
     setPhase('entry')
     setResultKind(null)
     setPresentedResultKind(null)
@@ -169,6 +280,7 @@ export default function ActivationStep1({
   }
 
   function handleUseAnotherOrder() {
+    deferActivationEntryResume()
     returnToEntry({ clearOrderId: true, focusField: true })
   }
 
@@ -189,23 +301,44 @@ export default function ActivationStep1({
     }
   }
 
+  // After an eligible verification, create the HttpOnly activation context and
+  // reveal account setup inline (Checkpoint 3 progressive activation).
+  useEffect(() => {
+    if (
+      resultKind !== 'eligible' ||
+      phase !== 'result' ||
+      accountSetupUnlocked ||
+      contextCreating ||
+      eligibleContextCreateStartedRef.current
+    ) {
+      return
+    }
+
+    eligibleContextCreateStartedRef.current = true
+
+    void (async () => {
+      const created = await persistEligibleContext(orderId)
+      if (created) {
+        clearActivationEntryDeferral()
+        setAccountSetupUnlocked(true)
+        activationContextResolution.retry()
+        return
+      }
+
+      eligibleContextCreateStartedRef.current = false
+      setResultKind('service_unavailable')
+      setPresentedResultKind('service_unavailable')
+    })()
+  }, [resultKind, phase, accountSetupUnlocked, contextCreating, orderId])
+
   async function handleStatusPrimaryAction() {
     if (!resultKind) {
       return
     }
 
     switch (resultKind) {
-      case 'eligible': {
-        const created = await persistEligibleContext(orderId)
-        if (!created) {
-          setResultKind('service_unavailable')
-          setPresentedResultKind('service_unavailable')
-          return
-        }
-
-        onContinueToAccount?.()
+      case 'eligible':
         break
-      }
       case 'not_found':
         returnToEntry({ focusField: true })
         break
@@ -256,7 +389,16 @@ export default function ActivationStep1({
 
     const content = getActivationStatusContent(resultKind)
 
-    if (resultKind === 'eligible' && !onContinueToAccount) {
+    if (resultKind === 'eligible') {
+      if (contextCreating) {
+        return {
+          label: 'Preparing account setup…',
+          onClick: () => undefined,
+          disabled: true,
+          loading: true,
+        }
+      }
+
       return undefined
     }
 
@@ -265,9 +407,8 @@ export default function ActivationStep1({
     }
 
     const disabled =
-      (resultKind === 'rate_limited' &&
-        (rateLimitRetryAt !== null ? !rateLimitRetryReady : true)) ||
-      (resultKind === 'eligible' && contextCreating)
+      resultKind === 'rate_limited' &&
+      (rateLimitRetryAt !== null ? !rateLimitRetryReady : true)
 
     return {
       label: content.primaryLabel,
@@ -275,7 +416,7 @@ export default function ActivationStep1({
         void handleStatusPrimaryAction()
       },
       disabled,
-      loading: resultKind === 'eligible' && contextCreating,
+      loading: false,
     }
   }
 
@@ -300,7 +441,10 @@ export default function ActivationStep1({
     : null
   const isResultChecking = phase === 'checking' && presentedResultKind !== null
   const showStatusPlate = Boolean(
-    presentedResultKind && (phase === 'result' || isResultChecking),
+    !accountSetupUnlocked &&
+      presentedResultKind &&
+      presentedResultKind !== 'eligible' &&
+      (phase === 'result' || isResultChecking),
   )
 
   function resolveRetryCheckingPrimaryAction() {
@@ -319,20 +463,49 @@ export default function ActivationStep1({
 
         <header className="mb-5 max-[667px]:mb-3">
           <p className="font-mono text-[10.5px] font-semibold uppercase tracking-step text-keyline-gold">
-            Step 1 of 2 · Verify purchase
+            {accountSetupUnlocked
+              ? 'Step 2 of 2 · Create account'
+              : 'Step 1 of 2 · Verify purchase'}
           </p>
           <h1 className="mt-[11px] text-[29px] font-extrabold leading-[1.08] tracking-[-0.022em] text-white max-[667px]:mt-2 lg:text-[30px]">
-            Unlock your SignMaster app
+            {accountSetupUnlocked ? 'Complete your SignMaster setup' : 'Unlock your SignMaster app'}
           </h1>
-          <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
-            Enter the Amazon order number for your{' '}
-            <span className="font-semibold text-white/90">101 UK Road Sign Flashcards</span>. App
-            access is included with your pack at no extra cost.
-          </p>
+          {accountSetupUnlocked ? (
+            <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
+              Your purchase is verified. Create an account or sign in to activate access.
+            </p>
+          ) : (
+            <p className="mt-[11px] text-[15px] leading-[1.55] text-white/70 max-[667px]:mt-2">
+              Enter the Amazon order number for your{' '}
+              <span className="font-semibold text-white/90">101 UK Road Sign Flashcards</span>. App
+              access is included with your pack at no extra cost.
+            </p>
+          )}
         </header>
 
         <KeylinePlate className="mt-5 max-[667px]:mt-3">
-          {showStatusPlate && statusContent ? (
+          {accountSetupUnlocked ? (
+            <ActivationAccountSetup
+              variant="progressive"
+              verifiedOrderId={orderIdSubmittable ? orderId : undefined}
+              activationContextResolution={activationContextResolution}
+              onSignIn={onSignIn}
+              onRestartActivation={handleUseAnotherOrder}
+              onEnterApp={onEnterApp}
+            />
+          ) : isInitialContextRestoring ? (
+            <div
+              data-testid="activation-context-restoring"
+              className="py-2"
+              aria-busy="true"
+              aria-live="polite"
+            >
+              <span className="inline-flex items-center gap-2 text-[15px] leading-[1.55] text-white/70">
+                <LoadingSpinner />
+                Restoring your activation…
+              </span>
+            </div>
+          ) : showStatusPlate && statusContent ? (
             <ActivationStatusPlate
               data-testid="activation-result-card"
               tone={statusContent.tone}
@@ -348,52 +521,91 @@ export default function ActivationStep1({
           ) : (
             <form
               data-testid="activation-entry-form"
+              data-eligible-preparing={isEligiblePreparing ? 'true' : undefined}
               noValidate
               onSubmit={handleSubmit}
               aria-label="Amazon order verification form"
             >
               <OrderIdField
                 value={orderId}
-                onChange={setOrderId}
+                onChange={(value, meta) => {
+                  setOrderId(value)
+                  setAutoVerifyEligible(meta.autoVerifyEligible)
+                  setOrderIdSourceWithinLimit(meta.sourceWithinDigitLimit)
+                }}
                 onOpenHelp={() =>
                   openHelp(0, showMeWhereRef.current, 'Finding your Amazon order number')
                 }
                 showError={showOrderIdError}
-                disabled={isChecking}
+                errorMessageOverride={orderIdErrorOverride}
+                disabled={isChecking || isEligiblePreparing}
                 inputRef={orderIdRef}
                 helpButtonRef={showMeWhereRef}
-                onBlur={() => setFieldTouched(true)}
               />
 
               <div className="mt-[18px] max-[667px]:mt-3.5">
                 {isChecking ? (
                   <CheckingOrderButton type="submit" />
+                ) : isEligiblePreparing ? (
+                  <PrimaryButton type="button" enabled={false} loading disabled>
+                    <span className="inline-flex items-center gap-2">
+                      <LoadingSpinner />
+                      Preparing account setup…
+                    </span>
+                  </PrimaryButton>
                 ) : (
                   <PrimaryButton type="submit" enabled={canSubmit}>
                     Check my order
                   </PrimaryButton>
                 )}
               </div>
+
+              {onSignIn ? (
+                <p className="mt-3 text-center text-[13px] leading-[1.55] text-white/[0.55]">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => onSignIn()}
+                    className="keyline-support-action font-medium text-white/70"
+                  >
+                    Sign in
+                  </button>
+                </p>
+              ) : null}
             </form>
           )}
         </KeylinePlate>
 
-        <p className="mt-4 text-xs leading-[1.55] text-white/[0.5] max-[667px]:mt-2">
-          Your order number is used only to verify your purchase and manage your SignMaster
-          access.
-        </p>
+        {accountSetupUnlocked ? (
+          <p className="mt-4 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:mt-2">
+            <button
+              type="button"
+              onClick={handleUseAnotherOrder}
+              className="keyline-support-action"
+            >
+              Use another order
+            </button>
+          </p>
+        ) : (
+          <p className="mt-4 text-xs leading-[1.55] text-white/[0.5] max-[667px]:mt-2">
+            Your order number is used only to verify your purchase and manage your SignMaster
+            access.
+          </p>
+        )}
 
-        <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
-          Need help with activation?{' '}
-          <button
-            ref={getSupportRef}
-            type="button"
-            onClick={() => openHelp(2, getSupportRef.current, 'SignMaster activation help')}
-            className="keyline-support-action"
-          >
-            Get support
-          </button>
-        </p>
+        {!accountSetupUnlocked ? (
+          <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
+            Need help with activation?{' '}
+            <button
+              ref={getSupportRef}
+              type="button"
+              onClick={() => openHelp(2, getSupportRef.current, 'SignMaster activation help')}
+              className="keyline-support-action"
+            >
+              Get support
+            </button>
+          </p>
+        ) : null}
       </ActivationShell>
 
       {helpOpen ? (

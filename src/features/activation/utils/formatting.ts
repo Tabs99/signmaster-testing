@@ -1,4 +1,34 @@
+import {
+  countOrderIdDigits,
+  isExactSeventeenDigitSource,
+  isOrderIdRawSourceWithinLimit,
+  isValidOrderId,
+} from './validation'
+
+export const CLIPBOARD_NO_ORDER_ID_MESSAGE =
+  'No Amazon Order ID found in your clipboard.' as const
+
 const MAX_ORDER_ID_DIGITS = 17
+
+export type ProcessedOrderIdInput = {
+  value: string
+  autoVerifyEligible: boolean
+  sourceWithinDigitLimit: boolean
+}
+
+/** Single path for keyboard, paste, and clipboard button input. */
+export function processOrderIdInput(
+  raw: string,
+  options: { trim?: boolean } = {},
+): ProcessedOrderIdInput {
+  const autoVerifyEligible = isExactSeventeenDigitSource(raw)
+  const source = options.trim ? raw.trim() : raw
+  return {
+    value: formatOrderId(source),
+    autoVerifyEligible,
+    sourceWithinDigitLimit: isOrderIdRawSourceWithinLimit(raw),
+  }
+}
 
 export function formatOrderId(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, MAX_ORDER_ID_DIGITS)
@@ -15,7 +45,33 @@ export function formatOrderId(raw: string): string {
 }
 
 export function normalisePastedOrderId(raw: string): string {
-  return formatOrderId(raw.trim())
+  return processOrderIdInput(raw, { trim: true }).value
+}
+
+/**
+ * Dedicated clipboard Paste button: accept only a complete 17-digit Amazon Order ID.
+ * Native keyboard paste continues to use {@link processOrderIdInput} directly.
+ */
+export function parseCompleteOrderIdFromClipboard(raw: string): ProcessedOrderIdInput | null {
+  const trimmed = raw.trim()
+  if (!trimmed || countOrderIdDigits(trimmed) !== 17) {
+    return null
+  }
+
+  const processed = processOrderIdInput(raw, { trim: true })
+  if (!isValidOrderId(processed.value)) {
+    return null
+  }
+
+  return processed
+}
+
+export function isClipboardPasteSupported(): boolean {
+  return (
+    typeof globalThis.navigator !== 'undefined' &&
+    globalThis.isSecureContext === true &&
+    typeof globalThis.navigator.clipboard?.readText === 'function'
+  )
 }
 
 export function countDigitsBeforeIndex(formatted: string, index: number): number {

@@ -5,6 +5,8 @@ import PrimaryButton from '../../activation/components/PrimaryButton'
 import BrandLockup from '../../activation/components/BrandLockup'
 import FieldError from '../../activation/components/FieldError'
 import { authService } from '../../../lib/auth/authService'
+import { useGoogleSignIn } from '../hooks/useGoogleSignIn'
+import SocialAuthOptions from './SocialAuthOptions'
 import { useAuthContext } from '../../auth/context/AuthProvider'
 import { AUTH_MESSAGES } from '../../../lib/auth/types'
 import {
@@ -59,14 +61,22 @@ function SignedInCard({ onEnterApp }: { onEnterApp?: () => void }) {
  */
 export default function SignInScreen({
   signIn = authService.signIn.bind(authService),
+  signInWithGoogle = authService.signInWithGoogle.bind(authService),
   onCreateAccount,
   onForgotPassword,
   onEnterApp,
 }: SignInScreenProps) {
-  const { isAuthenticated } = useAuthContext()
+  const { isAuthenticated, isInitializing } = useAuthContext()
+  const socialOAuthInFlightRef = useRef(false)
+  const { handleGoogleSignIn, googleLoading, googleError } = useGoogleSignIn({
+    signInWithGoogle,
+    inFlightRef: socialOAuthInFlightRef,
+  })
+  const socialOAuthError = googleError
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const submitInFlightRef = useRef(false)
+  const postAuthHandoffRef = useRef(false)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -89,11 +99,23 @@ export default function SignInScreen({
   // signed-in session. Gating on `isAuthenticated` (rather than navigating
   // straight after the sign-in call resolves) avoids racing the guard, which
   // reads the same auth context and would otherwise bounce back to sign-in.
+  // Password sign-in completes with formStatus `done`; OAuth return lands with
+  // an established session while the form remains `idle`.
   useEffect(() => {
-    if (formStatus === 'done' && isAuthenticated && onEnterApp) {
+    if (!isAuthenticated) {
+      postAuthHandoffRef.current = false
+      return
+    }
+
+    if (!isInitializing && onEnterApp && (formStatus === 'done' || formStatus === 'idle')) {
+      if (postAuthHandoffRef.current) {
+        return
+      }
+
+      postAuthHandoffRef.current = true
       onEnterApp()
     }
-  }, [formStatus, isAuthenticated, onEnterApp])
+  }, [formStatus, isAuthenticated, isInitializing, onEnterApp])
 
   function fieldState(field: AccountFieldName): AccountFieldState {
     const isFocused = focusedField === field
@@ -288,6 +310,15 @@ export default function SignInScreen({
                 'Sign in'
               )}
             </PrimaryButton>
+
+            <SocialAuthOptions
+              onGoogleClick={() => {
+                void handleGoogleSignIn()
+              }}
+              googleLoading={googleLoading}
+              disabled={isLoading}
+              error={socialOAuthError}
+            />
 
             <p className="mt-1 text-center text-sm leading-relaxed text-white/[0.62]">
               Need a SignMaster account?{' '}
