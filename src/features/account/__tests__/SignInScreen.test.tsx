@@ -32,11 +32,11 @@ describe('SignInScreen', () => {
     })
   })
 
-  it('shows Continue with Google and Apple alongside email/password sign-in', async () => {
+  it('shows Continue with Google and email/password sign-in without Apple', async () => {
     render(<SignInScreen />)
 
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Continue with Apple' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
@@ -88,19 +88,6 @@ describe('SignInScreen', () => {
     })
   })
 
-  it('invokes Apple auth when Continue with Apple is clicked', async () => {
-    const user = userEvent.setup()
-    const signInWithApple = vi.fn().mockResolvedValue({ kind: 'redirect_initiated' })
-
-    render(<SignInScreen signInWithApple={signInWithApple} />)
-
-    await user.click(screen.getByRole('button', { name: 'Continue with Apple' }))
-
-    await waitFor(() => {
-      expect(signInWithApple).toHaveBeenCalledOnce()
-    })
-  })
-
   it('shows safe retryable UI when Google OAuth initiation fails on sign-in', async () => {
     const user = userEvent.setup()
     const signInWithGoogle = vi.fn().mockResolvedValue({
@@ -116,25 +103,6 @@ describe('SignInScreen', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/Google sign-in/i)
     })
     expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled()
-  })
-
-  it('shows safe retryable UI when Apple OAuth initiation fails on sign-in', async () => {
-    const user = userEvent.setup()
-    const signInWithApple = vi.fn().mockResolvedValue({
-      kind: 'error',
-      error: { code: 'unknown', message: 'We could not start Google sign-in.' },
-    })
-
-    render(<SignInScreen signInWithApple={signInWithApple} />)
-
-    await user.click(screen.getByRole('button', { name: 'Continue with Apple' }))
-
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument()
-    })
-    expect(screen.getByLabelText('Email Address')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeEnabled()
   })
 

@@ -5,7 +5,6 @@ import PrimaryButton from '../../activation/components/PrimaryButton'
 import BrandLockup from '../../activation/components/BrandLockup'
 import FieldError from '../../activation/components/FieldError'
 import { authService } from '../../../lib/auth/authService'
-import { useAppleSignIn } from '../hooks/useAppleSignIn'
 import { useGoogleSignIn } from '../hooks/useGoogleSignIn'
 import SocialAuthOptions from './SocialAuthOptions'
 import { useAuthContext } from '../../auth/context/AuthProvider'
@@ -63,7 +62,6 @@ function SignedInCard({ onEnterApp }: { onEnterApp?: () => void }) {
 export default function SignInScreen({
   signIn = authService.signIn.bind(authService),
   signInWithGoogle = authService.signInWithGoogle.bind(authService),
-  signInWithApple = authService.signInWithApple.bind(authService),
   onCreateAccount,
   onForgotPassword,
   onEnterApp,
@@ -74,11 +72,7 @@ export default function SignInScreen({
     signInWithGoogle,
     inFlightRef: socialOAuthInFlightRef,
   })
-  const { handleAppleSignIn, appleLoading, appleError } = useAppleSignIn({
-    signInWithApple,
-    inFlightRef: socialOAuthInFlightRef,
-  })
-  const socialOAuthError = googleError ?? appleError
+  const socialOAuthError = googleError
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const submitInFlightRef = useRef(false)
@@ -321,11 +315,7 @@ export default function SignInScreen({
               onGoogleClick={() => {
                 void handleGoogleSignIn()
               }}
-              onAppleClick={() => {
-                void handleAppleSignIn()
-              }}
               googleLoading={googleLoading}
-              appleLoading={appleLoading}
               disabled={isLoading}
               error={socialOAuthError}
             />

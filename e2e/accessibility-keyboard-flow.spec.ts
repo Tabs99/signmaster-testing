@@ -49,12 +49,12 @@ test.describe('SignMaster keyboard accessibility', () => {
     await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeFocused()
   })
 
-  test('Continue with Apple is keyboard reachable on sign-in', async ({ page }) => {
+  test('Apple sign-in is not offered on sign-in', async ({ page }) => {
     await mockSupabaseAuthBootstrap(page)
 
     await page.goto('/sign-in')
-    await page.getByRole('button', { name: 'Continue with Apple' }).focus()
-    await expect(page.getByRole('button', { name: 'Continue with Apple' })).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Continue with Apple' })).toHaveCount(0)
   })
 
   test('sign-in is completable with the keyboard only and routes to /app', async ({ page }) => {

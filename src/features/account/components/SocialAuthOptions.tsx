@@ -9,22 +9,25 @@ const socialButtonClassName = (isInteractive: boolean, loading: boolean) =>
 
 export interface SocialAuthOptionsProps {
   onGoogleClick: () => void
-  onAppleClick: () => void
   googleLoading?: boolean
-  appleLoading?: boolean
   disabled?: boolean
   error?: string | null
+  /** Hidden until Apple Developer Program enrollment; re-enable to show Continue with Apple. */
+  showApple?: boolean
+  onAppleClick?: () => void
+  appleLoading?: boolean
 }
 
 export default function SocialAuthOptions({
   onGoogleClick,
-  onAppleClick,
   googleLoading = false,
-  appleLoading = false,
   disabled = false,
   error = null,
+  showApple = false,
+  onAppleClick,
+  appleLoading = false,
 }: SocialAuthOptionsProps) {
-  const blocked = disabled || googleLoading || appleLoading
+  const blocked = disabled || googleLoading || (showApple && appleLoading)
 
   return (
     <div className="flex flex-col gap-[18px]" data-testid="social-auth-options">
@@ -63,23 +66,25 @@ export default function SocialAuthOptions({
         )}
       </button>
 
-      <button
-        type="button"
-        onClick={onAppleClick}
-        disabled={blocked}
-        aria-disabled={blocked}
-        aria-busy={appleLoading || undefined}
-        className={socialButtonClassName(!blocked, appleLoading)}
-      >
-        {appleLoading ? (
-          <>
-            <LoadingSpinner />
-            <span>Connecting to Apple…</span>
-          </>
-        ) : (
-          'Continue with Apple'
-        )}
-      </button>
+      {showApple && onAppleClick ? (
+        <button
+          type="button"
+          onClick={onAppleClick}
+          disabled={blocked}
+          aria-disabled={blocked}
+          aria-busy={appleLoading || undefined}
+          className={socialButtonClassName(!blocked, appleLoading)}
+        >
+          {appleLoading ? (
+            <>
+              <LoadingSpinner />
+              <span>Connecting to Apple…</span>
+            </>
+          ) : (
+            'Continue with Apple'
+          )}
+        </button>
+      ) : null}
     </div>
   )
 }

@@ -14,7 +14,6 @@ import FieldError from '../../activation/components/FieldError'
 import LoadingSpinner from '../../activation/components/LoadingSpinner'
 import PrimaryButton from '../../activation/components/PrimaryButton'
 import { authService } from '../../../lib/auth/authService'
-import { useAppleSignIn } from '../hooks/useAppleSignIn'
 import { useGoogleSignIn } from '../hooks/useGoogleSignIn'
 import SocialAuthOptions from './SocialAuthOptions'
 import { buildConfirmationContinuationRedirect } from '../../../lib/activation/confirmationRedirect'
@@ -154,7 +153,6 @@ export default function ActivationAccountSetup({
   activationContextResolution,
   signUp = authService.signUp.bind(authService),
   signInWithGoogle = authService.signInWithGoogle.bind(authService),
-  signInWithApple = authService.signInWithApple.bind(authService),
   buildConfirmationRedirect = buildConfirmationContinuationRedirect,
   onSignIn,
   onRestartActivation,
@@ -430,12 +428,7 @@ export default function ActivationAccountSetup({
     enabled: googleSignInEnabled,
     inFlightRef: socialOAuthInFlightRef,
   })
-  const { handleAppleSignIn, appleLoading, appleError } = useAppleSignIn({
-    signInWithApple,
-    enabled: googleSignInEnabled,
-    inFlightRef: socialOAuthInFlightRef,
-  })
-  const socialOAuthError = googleError ?? appleError
+  const socialOAuthError = googleError
   const canSubmit =
     emailOk &&
     passwordOk &&
@@ -868,11 +861,7 @@ export default function ActivationAccountSetup({
               onGoogleClick={() => {
                 void handleGoogleSignIn()
               }}
-              onAppleClick={() => {
-                void handleAppleSignIn()
-              }}
               googleLoading={googleLoading}
-              appleLoading={appleLoading}
               disabled={!googleSignInEnabled}
               error={socialOAuthError}
             />

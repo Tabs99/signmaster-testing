@@ -81,7 +81,10 @@ function mockEntitlement(page: Page, status: 'ACTIVE' | 'NONE') {
   })
 }
 
-test.describe('Apple OAuth integration (CP6)', () => {
+// Apple sign-in UI is hidden (showApple=false) until Apple Developer Program enrollment; remove .skip and re-enable UI to run these again.
+test.describe.skip(
+  'Apple OAuth integration (CP6) — deferred until Apple Developer Program enrollment',
+  () => {
   test('E2E 1 — progressive activation with Apple claims once after OAuth return', async ({
     page,
   }) => {
