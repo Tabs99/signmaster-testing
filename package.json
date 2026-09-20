@@ -20,6 +20,9 @@
     "seed:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/seedActivationTestFixturesLocal.ts",
     "verify:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/verifyActivationTestFixturesLocal.ts",
     "clean:activation-test-local": "node --env-file=.env.local --import tsx server/scripts/cleanActivationTestFixturesLocal.ts",
+    "seed:activation-test-hosted": "node --import tsx server/scripts/seedActivationTestFixturesHosted.ts",
+    "verify:activation-test-hosted": "node --import tsx server/scripts/verifyActivationTestFixturesHosted.ts",
+    "clean:activation-test-hosted": "node --import tsx server/scripts/cleanActivationTestFixturesHosted.ts",
     "sync:amazon": "node --env-file=.env.local --import tsx server/scripts/syncAmazon.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"

@@ -419,6 +419,29 @@ so they require a running local Supabase and `SUPABASE_SECRET_KEY` in `.env.loca
 The cleanup script only ever touches the reserved synthetic Order IDs above. Never seed or expose
 real customer Order IDs.
 
+### Hosted production smoke fixtures (manual, guarded)
+
+The same reserved Order IDs and verification semantics can be seeded into the **hosted** Supabase
+project for pre-launch smoke testing. This does **not** change activation runtime logic and is **not**
+a `TEST_MODE`.
+
+| Purpose | Command |
+|---------|---------|
+| Seed hosted synthetic fixtures | `npm run seed:activation-test-hosted` |
+| Verify fixture rows (read-only) | `npm run verify:activation-test-hosted` |
+| Remove hosted synthetic fixtures | `npm run clean:activation-test-hosted` |
+
+Requires explicit env guards (`SIGNMASTER_ALLOW_HOSTED_ACTIVATION_FIXTURES=1` and
+`SIGNMASTER_CONFIRM_HOSTED_ACTIVATION_FIXTURES=<project-ref>`), hosted `SUPABASE_URL`, service-role
+key, and production `TARGET_ASIN`. See commented variables in [`.env.example`](./.env.example).
+Never run these against local Supabase; never commit production credentials.
+
+Cleanup removes only reserved synthetic order rows (and related contexts/continuations/
+entitlements for those order IDs). It does **not** delete the dedicated hosted fixture auth
+user (`activation-fixture-hosted@example.invalid`, tagged with
+`user_metadata.signmaster_fixture: activation-test-hosted`); remove that manually in Supabase
+Auth when smoke testing is finished.
+
 ---
 
 ## Authentication and activation flow

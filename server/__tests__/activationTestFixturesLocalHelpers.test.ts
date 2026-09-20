@@ -40,7 +40,9 @@ describe('activation test fixture helpers', () => {
   it('builds cleanup SQL constrained to reserved fixture IDs only', () => {
     const statements = buildFixtureCleanupSqlStatements()
 
-    expect(statements).toHaveLength(3)
+    expect(statements).toHaveLength(5)
+    expect(statements[0]).toContain('activation_continuations')
+    expect(statements[1]).toContain('activation_contexts')
     for (const statement of statements) {
       expect(statement).toContain("'000-0000000-0000000'")
       expect(statement).toContain("'777-7777777-7777777'")
@@ -109,6 +111,16 @@ describe('activation test fixture helpers', () => {
         seedable: true,
       }),
     ])
+  })
+
+  it('maps production TARGET_ASIN B0H8ZRL6DK on eligible shipped fixtures', () => {
+    const targetAsin = 'B0H8ZRL6DK'
+    const seeds = buildActivationTestOrderSeeds(targetAsin)
+
+    for (const orderId of ['000-0000000-0000000', '888-8888888-8888888', '777-7777777-7777777']) {
+      const seed = seeds.find((entry) => entry.orderId === orderId)
+      expect(seed?.items.every((item) => item.asin === targetAsin)).toBe(true)
+    }
   })
 
   it('never uses the current TARGET_ASIN for the wrong-product fixture', () => {
