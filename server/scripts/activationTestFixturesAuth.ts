@@ -5,6 +5,47 @@ import {
 } from './activationTestFixturesLocalHelpers.ts'
 import { parseHostedFixtureClaimOwnerUserId } from './activationTestFixturesHostedGuards.ts'
 
+/** Matches existing single-page lookup size; paginate when hosted user base grows. */
+export const FIXTURE_AUTH_USER_LIST_PAGE_SIZE = 1000
+
+/** Upper bound on admin listUsers pages scanned (avoids unbounded pagination). */
+export const FIXTURE_AUTH_USER_LIST_MAX_PAGES = 100
+
+export async function findAuthUserIdByEmailPaginated(
+  client: SupabaseClient,
+  normalizedEmail: string,
+): Promise<string | null> {
+  for (let page = 1; page <= FIXTURE_AUTH_USER_LIST_MAX_PAGES; page++) {
+    const listResult = await client.auth.admin.listUsers({
+      page,
+      perPage: FIXTURE_AUTH_USER_LIST_PAGE_SIZE,
+    })
+
+    if (listResult.error) {
+      throw new Error(
+        `Failed to list fixture auth users (page ${page}): ${listResult.error.message}`,
+      )
+    }
+
+    const users = listResult.data?.users ?? []
+    const existingUser = users.find(
+      (user) => user.email?.toLowerCase() === normalizedEmail,
+    )
+
+    if (existingUser?.id) {
+      return existingUser.id
+    }
+
+    if (users.length < FIXTURE_AUTH_USER_LIST_PAGE_SIZE) {
+      return null
+    }
+  }
+
+  throw new Error(
+    `Fixture auth user lookup exceeded ${FIXTURE_AUTH_USER_LIST_MAX_PAGES} pages without finding ${normalizedEmail}; refusing to scan further`,
+  )
+}
+
 export async function getOrCreateActivationFixtureAuthUserId(
   client: SupabaseClient,
   email: string,
@@ -12,20 +53,9 @@ export async function getOrCreateActivationFixtureAuthUserId(
 ): Promise<string> {
   const normalizedEmail = email.trim().toLowerCase()
 
-  const listResult = await client.auth.admin.listUsers({ page: 1, perPage: 1000 })
-
-  if (listResult.error) {
-    throw new Error(
-      `Failed to list fixture auth users: ${listResult.error.message}`,
-    )
-  }
-
-  const existingUser = listResult.data.users.find(
-    (user) => user.email?.toLowerCase() === normalizedEmail,
-  )
-
-  if (existingUser?.id) {
-    return existingUser.id
+  const existingId = await findAuthUserIdByEmailPaginated(client, normalizedEmail)
+  if (existingId) {
+    return existingId
   }
 
   const createResult = await client.auth.admin.createUser({
