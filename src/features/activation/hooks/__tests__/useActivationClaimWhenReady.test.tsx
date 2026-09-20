@@ -91,6 +91,26 @@ describe('useActivationClaimWhenReady', () => {
     })
   })
 
+  it('exposes rate_limited with retryAfterMs', async () => {
+    const claim = vi
+      .fn()
+      .mockResolvedValue({ kind: 'rate_limited', retryAfterMs: 90_000 })
+
+    const { result } = renderHook(() =>
+      useActivationClaimWhenReady({
+        ready: true,
+        claim,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({
+        kind: 'rate_limited',
+        retryAfterMs: 90_000,
+      })
+    })
+  })
+
   it('retries after a transient service error and does not run concurrently', async () => {
     const claim = vi
       .fn()

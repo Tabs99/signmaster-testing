@@ -1,4 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  ActivationVerifyRateLimitError,
+  normalizeActivationRateLimitRpcPayload,
+  type ActivationVerifyRateLimitResult,
+} from './activationRateLimitRpc.ts'
 
 export const CHECK_ACTIVATION_VERIFY_ATTEMPT_FN = 'check_and_record_activation_verify_attempt'
 
@@ -18,37 +23,8 @@ export interface ActivationVerifyRateLimitInput {
   now?: Date
 }
 
-export interface ActivationVerifyRateLimitResult {
-  allowed: boolean
-  retryAfterSeconds: number | null
-}
-
-export class ActivationVerifyRateLimitError extends Error {
-  readonly code?: string
-
-  constructor(message: string, code?: string) {
-    super(message)
-    this.name = 'ActivationVerifyRateLimitError'
-    this.code = code
-  }
-}
-
-function normalizeRpcPayload(data: unknown): ActivationVerifyRateLimitResult {
-  if (!data || typeof data !== 'object') {
-    throw new ActivationVerifyRateLimitError('Invalid rate limit RPC response shape')
-  }
-
-  const record = data as Record<string, unknown>
-  const allowed = record.allowed === true
-  const retryRaw = record.retry_after_seconds
-
-  let retryAfterSeconds: number | null = null
-  if (typeof retryRaw === 'number' && Number.isFinite(retryRaw) && retryRaw > 0) {
-    retryAfterSeconds = Math.ceil(retryRaw)
-  }
-
-  return { allowed, retryAfterSeconds }
-}
+export type { ActivationVerifyRateLimitResult }
+export { ActivationVerifyRateLimitError }
 
 export async function checkAndRecordActivationVerifyAttempt(
   input: ActivationVerifyRateLimitInput,
@@ -71,5 +47,5 @@ export async function checkAndRecordActivationVerifyAttempt(
     )
   }
 
-  return normalizeRpcPayload(data)
+  return normalizeActivationRateLimitRpcPayload(data)
 }

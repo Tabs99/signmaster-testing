@@ -9,6 +9,7 @@ export type ActivationClaimState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'outcome'; outcome: ActivationClaimOutcome }
+  | { kind: 'rate_limited'; retryAfterMs: number | null }
   | { kind: 'service_unavailable' }
   | { kind: 'connection_error' }
 
@@ -35,6 +36,10 @@ export interface UseActivationClaimWhenReadyResult {
 function mapClaimResult(result: ActivationClaimResult): ActivationClaimState {
   if (result.kind === 'outcome') {
     return { kind: 'outcome', outcome: result.outcome }
+  }
+
+  if (result.kind === 'rate_limited') {
+    return { kind: 'rate_limited', retryAfterMs: result.retryAfterMs }
   }
 
   return { kind: result.kind }

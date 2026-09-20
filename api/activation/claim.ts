@@ -4,11 +4,25 @@ import {
   getActivationTargetAsin,
 } from '../../server/activation/config.ts'
 import {
+  isActivationClaimBodyAllowed,
+  isActivationClaimBodyTooLarge,
+} from '../../server/activation/claimRequestLimits.ts'
+import { getActivationVerifyClientIp } from '../../server/activation/verifyClientIp.ts'
+import {
+  buildActivationClaimContextBucketKey,
+  buildActivationClaimIpBucketKey,
+  buildActivationClaimUserBucketKey,
+} from '../../server/activation/verifyRateLimitBuckets.ts'
+import {
   ActivationClaimError,
   claimActivationEntitlement,
   fetchEntitlementByOrderId,
   resolveExistingEntitlementOwnership,
 } from '../../server/services/activationClaimService.ts'
+import {
+  ActivationClaimRateLimitError,
+  checkAndRecordActivationClaimAttempt,
+} from '../../server/services/activationClaimRateLimit.ts'
 import {
   ActivationContextError,
   resolveActivationContextWithOrderId,
@@ -68,6 +82,8 @@ export interface ActivationClaimHandlerDeps {
   verifyEligibility: typeof verifyActivationEligibility
   claimEntitlement: typeof claimActivationEntitlement
   fetchEntitlement: typeof fetchEntitlementByOrderId
+  checkRateLimit: typeof checkAndRecordActivationClaimAttempt
+  getClientIp: typeof getActivationVerifyClientIp
 }
 
 const defaultDeps: ActivationClaimHandlerDeps = {
@@ -78,6 +94,8 @@ const defaultDeps: ActivationClaimHandlerDeps = {
   verifyEligibility: verifyActivationEligibility,
   claimEntitlement: claimActivationEntitlement,
   fetchEntitlement: fetchEntitlementByOrderId,
+  checkRateLimit: checkAndRecordActivationClaimAttempt,
+  getClientIp: getActivationVerifyClientIp,
 }
 
 function getCookieHeader(req: VercelLikeRequest): string | undefined {
@@ -108,8 +126,59 @@ export async function handleActivationClaim(
     return
   }
 
+  if (isActivationClaimBodyTooLarge(req.headers, req.body)) {
+    res.status(413).json({ error: 'REQUEST_TOO_LARGE' })
+    return
+  }
+
+  if (!isActivationClaimBodyAllowed(req.body)) {
+    res.status(400).json({ error: 'INVALID_REQUEST' })
+    return
+  }
+
   try {
-    const authenticatedUser = await deps.getAuthenticatedUser(req.headers)
+    const contextToken = parseActivationContextCookie(getCookieHeader(req))
+    let authenticatedUser: AuthenticatedRequestUser | null = null
+
+    try {
+      authenticatedUser = await deps.getAuthenticatedUser(req.headers)
+    } catch {
+      res.status(500).json({ status: 'ERROR' })
+      return
+    }
+
+    const ipBucketKey = buildActivationClaimIpBucketKey(deps.getClientIp(req.headers))
+    const userBucketKey = authenticatedUser
+      ? buildActivationClaimUserBucketKey(authenticatedUser.id)
+      : null
+    const contextBucketKey = contextToken
+      ? buildActivationClaimContextBucketKey(contextToken)
+      : null
+
+    try {
+      const rateLimit = await deps.checkRateLimit({
+        supabaseClient: deps.createClient(),
+        ipBucketKey,
+        userBucketKey,
+        contextBucketKey,
+      })
+
+      if (!rateLimit.allowed) {
+        if (rateLimit.retryAfterSeconds !== null) {
+          res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds))
+        }
+        res.status(429).json({ error: 'RATE_LIMITED' })
+        return
+      }
+    } catch (error) {
+      if (error instanceof ActivationClaimRateLimitError) {
+        res.status(503).json({ status: 'ERROR' })
+        return
+      }
+
+      res.status(503).json({ status: 'ERROR' })
+      return
+    }
 
     if (!authenticatedUser) {
       res.status(401).json({ status: 'UNAUTHENTICATED' })
@@ -120,8 +189,6 @@ export async function handleActivationClaim(
       res.status(200).json({ status: 'EMAIL_NOT_CONFIRMED' })
       return
     }
-
-    const contextToken = parseActivationContextCookie(getCookieHeader(req))
 
     if (!contextToken) {
       res.status(200).json({ status: 'NO_CONTEXT' })

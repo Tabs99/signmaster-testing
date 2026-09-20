@@ -1,3 +1,4 @@
+import { parseRetryAfterMs } from './activationApi'
 import { getBrowserSupabaseClient } from '../supabase/client'
 
 export const ACTIVATION_CLAIM_PATH = '/api/activation/claim'
@@ -13,6 +14,7 @@ export type ActivationClaimOutcome =
 
 export type ActivationClaimResult =
   | { kind: 'outcome'; outcome: ActivationClaimOutcome }
+  | { kind: 'rate_limited'; retryAfterMs: number | null }
   | { kind: 'service_unavailable' }
   | { kind: 'connection_error' }
 
@@ -120,6 +122,13 @@ export async function claimActivationEntitlement(
     })
 
     const body = await readResponseBody(response)
+
+    if (response.status === 429 && isRecord(body) && body.error === 'RATE_LIMITED') {
+      return {
+        kind: 'rate_limited',
+        retryAfterMs: parseRetryAfterMs(response.headers.get('Retry-After')),
+      }
+    }
 
     if (response.status >= 500) {
       return { kind: 'service_unavailable' }

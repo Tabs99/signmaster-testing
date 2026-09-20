@@ -22,6 +22,21 @@ describe('resolveActivationContinuationView', () => {
     )
   })
 
+  it('maps rate-limited claim errors to a dedicated view', () => {
+    expect(
+      resolveActivationContinuationView(
+        { kind: 'rate_limited', retryAfterMs: 60_000 },
+        idleCompletion,
+      ),
+    ).toBe('claim_rate_limited')
+    expect(
+      resolveActivationContinuationView(
+        { kind: 'rate_limited', retryAfterMs: null },
+        idleCompletion,
+      ),
+    ).toBe('claim_rate_limited')
+  })
+
   it('maps transient claim errors to a retryable claim error', () => {
     expect(
       resolveActivationContinuationView({ kind: 'service_unavailable' }, idleCompletion),

@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
 import { claimActivationEntitlement } from '../activationClaimApi.ts'
 
+function mockResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: {
+      get(name: string) {
+        return headers[name.toLowerCase()] ?? headers[name] ?? null
+      },
+    },
+    text: async () => (body === null ? '' : JSON.stringify(body)),
+  } as Response
+}
+
 describe('activationClaimApi', () => {
   it('POSTs with credentials include and bearer token only', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
@@ -118,6 +135,56 @@ describe('activationClaimApi', () => {
         getAccessToken: async () => 'token',
       }),
     ).resolves.toEqual({ kind: 'outcome', outcome: 'not_eligible' })
+  })
+
+  it('maps 429 RATE_LIMITED with Retry-After seconds', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      mockResponse(429, { error: 'RATE_LIMITED' }, { 'retry-after': '120' }),
+    )
+
+    await expect(
+      claimActivationEntitlement({
+        fetchFn,
+        getAccessToken: async () => 'token',
+      }),
+    ).resolves.toEqual({ kind: 'rate_limited', retryAfterMs: 120_000 })
+  })
+
+  it('maps 429 RATE_LIMITED without usable Retry-After', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      mockResponse(429, { error: 'RATE_LIMITED' }, {}),
+    )
+
+    await expect(
+      claimActivationEntitlement({
+        fetchFn,
+        getAccessToken: async () => 'token',
+      }),
+    ).resolves.toEqual({ kind: 'rate_limited', retryAfterMs: null })
+  })
+
+  it('maps 429 RATE_LIMITED with malformed Retry-After to rate_limited with null retryAfterMs', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      mockResponse(429, { error: 'RATE_LIMITED' }, { 'retry-after': 'not-a-delay' }),
+    )
+
+    await expect(
+      claimActivationEntitlement({
+        fetchFn,
+        getAccessToken: async () => 'token',
+      }),
+    ).resolves.toEqual({ kind: 'rate_limited', retryAfterMs: null })
+  })
+
+  it('maps 429 without RATE_LIMITED to service_unavailable', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(mockResponse(429, { error: 'OTHER' }, {}))
+
+    await expect(
+      claimActivationEntitlement({
+        fetchFn,
+        getAccessToken: async () => 'token',
+      }),
+    ).resolves.toEqual({ kind: 'service_unavailable' })
   })
 
   it('maps 5xx to service_unavailable', async () => {

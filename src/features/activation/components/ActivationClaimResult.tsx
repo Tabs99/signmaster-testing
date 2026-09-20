@@ -306,6 +306,18 @@ function resolvePlateContent(
         body: ['Sign in to your SignMaster account to activate access.'],
         primaryAction: onSignIn ? { label: 'Sign in', onClick: onSignIn } : undefined,
       }
+    case 'claim_rate_limited':
+      return {
+        tone: 'neutral',
+        heading: "Let's give that a moment",
+        body: [
+          "We've had several activation attempts. Please wait a few minutes before trying again.",
+          'If you still need help, contact support.',
+        ],
+        primaryAction: onRetryClaim
+          ? { label: 'Try again', onClick: onRetryClaim }
+          : undefined,
+      }
     case 'claim_retryable_error':
       return {
         tone: 'neutral',

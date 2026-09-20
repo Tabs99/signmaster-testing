@@ -206,6 +206,24 @@ describe('ActivationClaimResult', () => {
     expect(screen.getByRole('button', { name: 'Restart activation' })).toBeInTheDocument()
   })
 
+  it('shows rate-limit copy instead of service unavailable when claim is rate limited', async () => {
+    const user = userEvent.setup()
+    const onRetryClaim = vi.fn()
+
+    renderResult({ kind: 'rate_limited', retryAfterMs: 120_000 }, { onRetryClaim })
+
+    expect(screen.getByText("Let's give that a moment")).toBeInTheDocument()
+    expect(
+      screen.queryByText("We couldn't activate your access right now"),
+    ).not.toBeInTheDocument()
+    expect(
+      document.querySelector('[data-continuation-view="claim_rate_limited"]'),
+    ).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(onRetryClaim).toHaveBeenCalledTimes(1)
+  })
+
   it('offers an explicit retry for a transient claim error', async () => {
     const user = userEvent.setup()
     const onRetryClaim = vi.fn()

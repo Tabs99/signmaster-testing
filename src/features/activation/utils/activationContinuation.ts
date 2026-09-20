@@ -24,6 +24,7 @@ export type ActivationContinuationView =
   | 'context_expired'
   | 'email_not_confirmed'
   | 'unauthenticated'
+  | 'claim_rate_limited'
   | 'claim_retryable_error'
 
 export function resolveActivationContinuationView(
@@ -36,6 +37,10 @@ export function resolveActivationContinuationView(
 
   if (claim.kind === 'loading') {
     return 'claiming'
+  }
+
+  if (claim.kind === 'rate_limited') {
+    return 'claim_rate_limited'
   }
 
   if (claim.kind === 'service_unavailable' || claim.kind === 'connection_error') {

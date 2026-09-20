@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ActivationClaimRateLimitError } from '../../../server/services/activationClaimRateLimit.ts'
 import {
   handleActivationClaim,
   performActivationClaim,
@@ -45,6 +46,8 @@ function createDeps(overrides: Partial<Parameters<typeof handleActivationClaim>[
     verifyEligibility: vi.fn(),
     claimEntitlement: vi.fn(),
     fetchEntitlement: vi.fn(),
+    checkRateLimit: vi.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null }),
+    getClientIp: () => '203.0.113.10',
     ...overrides,
   }
 }
@@ -516,17 +519,18 @@ describe('handleActivationClaim', () => {
     expect(res.body).toEqual({ status: 'ERROR' })
   })
 
-  it('never exposes Amazon Order ID in responses', async () => {
+  it('rejects unexpected request body content and does not use it for claim authority', async () => {
     const res = createMockResponse()
+    const resolveContextWithOrderId = vi.fn().mockResolvedValue({
+      status: 'VALID',
+      amazonOrderId: FIXTURE_ORDER_ID,
+    })
     const deps = createDeps({
       getAuthenticatedUser: vi.fn().mockResolvedValue({
         id: CURRENT_USER_ID,
         emailConfirmed: true,
       }),
-      resolveContextWithOrderId: vi.fn().mockResolvedValue({
-        status: 'VALID',
-        amazonOrderId: FIXTURE_ORDER_ID,
-      }),
+      resolveContextWithOrderId,
       fetchEntitlement: vi.fn().mockResolvedValue(null),
       verifyEligibility: vi.fn().mockResolvedValue({ status: 'ELIGIBLE' }),
       claimEntitlement: vi.fn().mockResolvedValue('SUCCESS'),
@@ -539,16 +543,116 @@ describe('handleActivationClaim', () => {
           orderId: '999-9999999-9999999',
           userId: OTHER_USER_ID,
         },
+        headers: claimRequestHeaders,
+      },
+      res,
+      deps,
+    )
+
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toEqual({ error: 'INVALID_REQUEST' })
+    expect(resolveContextWithOrderId).not.toHaveBeenCalled()
+  })
+
+  it('returns 413 for oversized bodies', async () => {
+    const res = createMockResponse()
+    const deps = createDeps()
+
+    await handleActivationClaim(
+      {
+        method: 'POST',
+        headers: { 'content-length': '5000' },
+        body: {},
+      },
+      res,
+      deps,
+    )
+
+    expect(res.statusCode).toBe(413)
+    expect(res.body).toEqual({ error: 'REQUEST_TOO_LARGE' })
+  })
+
+  it('returns 429 with Retry-After when rate limited', async () => {
+    const res = createMockResponse()
+    const deps = createDeps({
+      getAuthenticatedUser: vi.fn().mockResolvedValue({
+        id: CURRENT_USER_ID,
+        emailConfirmed: true,
+      }),
+      checkRateLimit: vi
+        .fn()
+        .mockResolvedValue({ allowed: false, retryAfterSeconds: 120 }),
+    })
+
+    await handleActivationClaim({ method: 'POST', headers: claimRequestHeaders }, res, deps)
+
+    expect(res.statusCode).toBe(429)
+    expect(res.body).toEqual({ error: 'RATE_LIMITED' })
+    expect(res.headers['Retry-After']).toBe('120')
+  })
+
+  it('returns 503 when rate limit infrastructure fails', async () => {
+    const res = createMockResponse()
+    const deps = createDeps({
+      getAuthenticatedUser: vi.fn().mockResolvedValue({
+        id: CURRENT_USER_ID,
+        emailConfirmed: true,
+      }),
+      checkRateLimit: vi.fn().mockRejectedValue(
+        new ActivationClaimRateLimitError('Activation claim rate limit check failed'),
+      ),
+    })
+
+    await handleActivationClaim({ method: 'POST', headers: claimRequestHeaders }, res, deps)
+
+    expect(res.statusCode).toBe(503)
+    expect(res.body).toEqual({ status: 'ERROR' })
+  })
+
+  it('passes hashed rate-limit buckets without raw user id, order id, or IP', async () => {
+    const res = createMockResponse()
+    const checkRateLimit = vi.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: null })
+    const deps = createDeps({
+      getAuthenticatedUser: vi.fn().mockResolvedValue({
+        id: CURRENT_USER_ID,
+        emailConfirmed: true,
+      }),
+      resolveContextWithOrderId: vi.fn().mockResolvedValue({
+        status: 'VALID',
+        amazonOrderId: FIXTURE_ORDER_ID,
+      }),
+      fetchEntitlement: vi.fn().mockResolvedValue(null),
+      verifyEligibility: vi.fn().mockResolvedValue({ status: 'ELIGIBLE' }),
+      claimEntitlement: vi.fn().mockResolvedValue('SUCCESS'),
+      checkRateLimit,
+      getClientIp: () => '203.0.113.10',
+    })
+
+    await handleActivationClaim(
+      {
+        method: 'POST',
         headers: {
-          cookie: `sm_activation_ctx=${encodeURIComponent(FIXTURE_TOKEN)}`,
+          ...claimRequestHeaders,
+          'x-vercel-forwarded-for': '203.0.113.10',
         },
       },
       res,
       deps,
     )
 
+    expect(checkRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ipBucketKey: expect.stringMatching(/^claim-ip:[a-f0-9]{64}$/),
+        userBucketKey: expect.stringMatching(/^claim-uid:[a-f0-9]{64}$/),
+        contextBucketKey: expect.stringMatching(/^claim-ctx:[a-f0-9]{64}$/),
+      }),
+    )
+    const payload = JSON.stringify(checkRateLimit.mock.calls[0]?.[0])
+    expect(payload).not.toContain(CURRENT_USER_ID)
+    expect(payload).not.toContain(FIXTURE_ORDER_ID)
+    expect(payload).not.toContain('203.0.113.10')
+    expect(res.body).toEqual({ status: 'SUCCESS' })
     expect(JSON.stringify(res.body)).not.toContain(FIXTURE_ORDER_ID)
-    expect(JSON.stringify(res.body)).not.toContain('999-9999999-9999999')
   })
 })
 
