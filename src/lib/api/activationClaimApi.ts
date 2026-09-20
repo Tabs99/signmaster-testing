@@ -3,6 +3,21 @@ import { getBrowserSupabaseClient } from '../supabase/client'
 
 export const ACTIVATION_CLAIM_PATH = '/api/activation/claim'
 
+/** Bodyless claim contract: only an empty JSON object (no authority fields). */
+export const ACTIVATION_CLAIM_REQUEST_BODY = '{}'
+
+export function buildActivationClaimRequestInit(accessToken: string): RequestInit {
+  return {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: ACTIVATION_CLAIM_REQUEST_BODY,
+  }
+}
+
 export type ActivationClaimOutcome =
   | 'success'
   | 'already_claimed'
@@ -113,11 +128,7 @@ export async function claimActivationEntitlement(
 
   try {
     const response = await fetchFn(ACTIVATION_CLAIM_PATH, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      ...buildActivationClaimRequestInit(accessToken),
       signal: options.signal,
     })
 

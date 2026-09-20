@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { claimActivationEntitlement } from '../activationClaimApi.ts'
+import {
+  ACTIVATION_CLAIM_REQUEST_BODY,
+  buildActivationClaimRequestInit,
+  claimActivationEntitlement,
+} from '../activationClaimApi.ts'
 
 function mockResponse(
   status: number,
@@ -19,6 +23,25 @@ function mockResponse(
 }
 
 describe('activationClaimApi', () => {
+  it('builds a bodyless claim request with an empty JSON object only', () => {
+    const init = buildActivationClaimRequestInit('test-access-token')
+
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('include')
+    expect(init.headers).toEqual({
+      Authorization: 'Bearer test-access-token',
+      'Content-Type': 'application/json',
+    })
+    expect(init.body).toBe(ACTIVATION_CLAIM_REQUEST_BODY)
+    expect(JSON.parse(ACTIVATION_CLAIM_REQUEST_BODY)).toEqual({})
+
+    const parsed = JSON.parse(String(init.body)) as Record<string, unknown>
+    expect(Object.keys(parsed)).toHaveLength(0)
+    expect(parsed).not.toHaveProperty('orderId')
+    expect(parsed).not.toHaveProperty('email')
+    expect(parsed).not.toHaveProperty('userId')
+  })
+
   it('POSTs with credentials include and bearer token only', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ status: 'SUCCESS' }), { status: 200 }),
@@ -34,16 +57,13 @@ describe('activationClaimApi', () => {
     expect(fetchFn).toHaveBeenCalledWith(
       '/api/activation/claim',
       expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Authorization: 'Bearer test-access-token',
-        },
+        ...buildActivationClaimRequestInit('test-access-token'),
       }),
     )
 
     const requestInit = fetchFn.mock.calls[0]?.[1]
-    expect(requestInit?.body).toBeUndefined()
+    expect(requestInit?.body).toBe('{}')
+    expect(JSON.parse(String(requestInit?.body))).toEqual({})
   })
 
   it('maps SUCCESS', async () => {

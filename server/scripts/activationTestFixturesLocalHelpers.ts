@@ -3,6 +3,13 @@ import type { ActivationVerificationStatus } from '../services/activationVerific
 export const ACTIVATION_TEST_FIXTURE_AUTH_EMAIL =
   'activation-fixture@example.invalid'
 
+/** Dedicated hosted-smoke auth user for ALREADY_CLAIMED (333…) — not a real customer. */
+export const ACTIVATION_TEST_FIXTURE_HOSTED_AUTH_EMAIL =
+  'activation-fixture-hosted@example.invalid'
+
+export const ACTIVATION_TEST_FIXTURE_SKU_PREFIX = 'FIXTURE-'
+export const ACTIVATION_TEST_FIXTURE_ORDER_ITEM_ID_PREFIX = 'fixture-item-'
+
 export const ACTIVATION_TEST_NOT_FOUND_ABSENT_ORDER_ID =
   '111-1111111-1111111'
 
@@ -27,6 +34,10 @@ export const ACTIVATION_TEST_SEED_ORDER_IDS = ACTIVATION_TEST_RESET_ORDER_IDS.fi
 
 export const ACTIVATION_TEST_FIXTURE_LAST_AMAZON_UPDATE =
   '2026-01-01T00:00:00.000Z'
+
+/** Stable marker timestamp for all synthetic fixture orders (not Amazon sync time). */
+export const ACTIVATION_TEST_FIXTURE_MARKER_LAST_AMAZON_UPDATE =
+  ACTIVATION_TEST_FIXTURE_LAST_AMAZON_UPDATE
 
 export interface ActivationTestFixtureExpectation {
   orderId: string
@@ -277,6 +288,8 @@ export function buildFixtureCleanupSqlStatements(
   const inList = orderIds.map((orderId) => `'${orderId}'`).join(', ')
 
   return [
+    `delete from public.activation_continuations where amazon_order_id in (${inList});`,
+    `delete from public.activation_contexts where amazon_order_id in (${inList});`,
     `delete from public.app_entitlements where amazon_order_id in (${inList});`,
     `delete from public.amazon_order_items where amazon_order_id in (${inList});`,
     `delete from public.amazon_orders where amazon_order_id in (${inList});`,

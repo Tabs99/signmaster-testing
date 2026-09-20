@@ -1,9 +1,9 @@
 import { createActivationContext } from '../services/activationContextService.ts'
 import { createServiceRoleClientFromEnv } from '../supabase/client.ts'
+import { resolveLocalFixtureClaimOwnerUserId } from './activationTestFixturesAuth.ts'
 import {
   assertLocalActivationFixtureEnvironment,
   cleanupActivationTestFixturesLocal,
-  getOrCreateActivationFixtureAuthUserId,
   runLocalSupabaseSql,
   seedActivationTestFixturesLocal,
 } from './activationTestFixturesLocalDb.ts'
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   await seedActivationTestFixturesLocal()
 
   const client = createServiceRoleClientFromEnv()
-  const fixtureUserId = await getOrCreateActivationFixtureAuthUserId(client)
+  const fixtureUserId = await resolveLocalFixtureClaimOwnerUserId(client)
   await client.auth.admin.updateUserById(fixtureUserId, {
     password: 'ActivationFixture123!',
   })
