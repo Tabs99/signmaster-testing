@@ -55,8 +55,7 @@ function mockActivationClaimRoute(
     const authorization = route.request().headers()['authorization']
     expect(authorization).toBe('Bearer test-access-token')
 
-    const body = route.request().postData()
-    expect(body).toBeNull()
+    expect(route.request().postDataJSON()).toEqual({})
 
     await route.fulfill({
       status: 200,
