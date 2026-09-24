@@ -32,6 +32,11 @@ export interface CreateAccountScreenProps {
 }
 
 export interface ActivationAccountSetupProps extends CreateAccountScreenProps {
+  /**
+   * Fires with true once the entitlement is claimed, so the surrounding screen
+   * can stop offering ways back into activation.
+   */
+  onActivatedChange?: (activated: boolean) => void
   variant?: ActivationAccountSetupVariant
   /** When set (progressive /activate), avoids a second context GET in the child. */
   activationContextResolution?: ActivationContextResolutionSnapshot

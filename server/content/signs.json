@@ -1,0 +1,1018 @@
+[
+  {
+    "id": "s001",
+    "ordinal": 1,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Junction ahead controlled by a STOP or GIVE WAY sign",
+    "images": [
+      "501.jpg"
+    ]
+  },
+  {
+    "id": "s002",
+    "ordinal": 2,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Crossroads",
+    "images": [
+      "504.1.jpg"
+    ]
+  },
+  {
+    "id": "s003",
+    "ordinal": 3,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "T-junction with priority over vehicles from the right",
+    "images": [
+      "505.1.jpg"
+    ]
+  },
+  {
+    "id": "s004",
+    "ordinal": 4,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Side road ahead (right)",
+    "images": [
+      "506.1.jpg"
+    ]
+  },
+  {
+    "id": "s005",
+    "ordinal": 5,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Staggered junction",
+    "images": [
+      "507.1.jpg"
+    ]
+  },
+  {
+    "id": "s006",
+    "ordinal": 6,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Traffic merges ahead from the left",
+    "images": [
+      "508.1.jpg"
+    ]
+  },
+  {
+    "id": "s007",
+    "ordinal": 7,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Traffic merges ahead onto main carriageway from the left",
+    "images": [
+      "509.1.jpg"
+    ]
+  },
+  {
+    "id": "s008",
+    "ordinal": 8,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Roundabout",
+    "images": [
+      "510.jpg"
+    ]
+  },
+  {
+    "id": "s009",
+    "ordinal": 9,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Junction on left bend ahead",
+    "images": [
+      "512.1L.jpg"
+    ]
+  },
+  {
+    "id": "s010",
+    "ordinal": 10,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Bend to right (or left if symbol reversed)",
+    "images": [
+      "512.jpg"
+    ]
+  },
+  {
+    "id": "s011",
+    "ordinal": 11,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Double bend first to the left (right if symbol reversed)",
+    "images": [
+      "513.jpg"
+    ]
+  },
+  {
+    "id": "s012",
+    "ordinal": 12,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Dual carriageway ends",
+    "images": [
+      "520.jpg"
+    ]
+  },
+  {
+    "id": "s013",
+    "ordinal": 13,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Two-way traffic",
+    "images": [
+      "521.jpg"
+    ]
+  },
+  {
+    "id": "s014",
+    "ordinal": 14,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Two-way traffic on route crossing ahead",
+    "images": [
+      "522.jpg"
+    ]
+  },
+  {
+    "id": "s015",
+    "ordinal": 15,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Steep hill downwards (10% is equivalent to 1:10)",
+    "images": [
+      "523.1.jpg"
+    ]
+  },
+  {
+    "id": "s016",
+    "ordinal": 16,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Hump bridge",
+    "images": [
+      "528.jpg"
+    ]
+  },
+  {
+    "id": "s017",
+    "ordinal": 17,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Tunnel",
+    "images": [
+      "529.1.jpg"
+    ]
+  },
+  {
+    "id": "s018",
+    "ordinal": 18,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Opening or swing bridge",
+    "images": [
+      "529.jpg"
+    ]
+  },
+  {
+    "id": "s019",
+    "ordinal": 19,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Traffic signals ahead",
+    "images": [
+      "543.jpg"
+    ]
+  },
+  {
+    "id": "s020",
+    "ordinal": 20,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Pedestrians in road ahead",
+    "images": [
+      "544.1.jpg"
+    ]
+  },
+  {
+    "id": "s021",
+    "ordinal": 21,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Frail pedestrians likely to cross",
+    "images": [
+      "544.2.jpg"
+    ]
+  },
+  {
+    "id": "s022",
+    "ordinal": 22,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Zebra or parallel crossing",
+    "images": [
+      "544.jpg"
+    ]
+  },
+  {
+    "id": "s023",
+    "ordinal": 23,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Children going to or from school or playground ahead",
+    "images": [
+      "545.jpg"
+    ]
+  },
+  {
+    "id": "s024",
+    "ordinal": 24,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Accompanied horses or ponies likely to be in or crossing the road",
+    "images": [
+      "550.1.jpg"
+    ]
+  },
+  {
+    "id": "s025",
+    "ordinal": 25,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Wild animals",
+    "images": [
+      "551.jpg"
+    ]
+  },
+  {
+    "id": "s026",
+    "ordinal": 26,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Agricultural vehicles likely to be in road ahead",
+    "images": [
+      "553.1.jpg"
+    ]
+  },
+  {
+    "id": "s027",
+    "ordinal": 27,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Risk of ice or packed snow ahead",
+    "images": [
+      "554.2.jpg"
+    ]
+  },
+  {
+    "id": "s028",
+    "ordinal": 28,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Worded warning. ‘Ford’ may be varied to ‘Flood’, ‘Gate’, ‘Gates’ or ‘No smoking’",
+    "images": [
+      "554.jpg"
+    ]
+  },
+  {
+    "id": "s029",
+    "ordinal": 29,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Quayside or river bank",
+    "images": [
+      "555.jpg"
+    ]
+  },
+  {
+    "id": "s030",
+    "ordinal": 30,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Uneven road",
+    "images": [
+      "556.jpg"
+    ]
+  },
+  {
+    "id": "s031",
+    "ordinal": 31,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Soft verges",
+    "images": [
+      "556.1.jpg"
+    ]
+  },
+  {
+    "id": "s032",
+    "ordinal": 32,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Slippery road",
+    "images": [
+      "557.jpg"
+    ]
+  },
+  {
+    "id": "s033",
+    "ordinal": 33,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Low-flying aircraft or sudden aircraft noise",
+    "images": [
+      "558.jpg"
+    ]
+  },
+  {
+    "id": "s034",
+    "ordinal": 34,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Risk of falling or fallen rocks",
+    "images": [
+      "559.jpg"
+    ]
+  },
+  {
+    "id": "s035",
+    "ordinal": 35,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Side winds",
+    "images": [
+      "581.jpg"
+    ]
+  },
+  {
+    "id": "s036",
+    "ordinal": 36,
+    "category": "Warning Signs",
+    "group": "warning",
+    "meaning": "Traffic queues likely ahead",
+    "images": [
+      "584.jpg"
+    ]
+  },
+  {
+    "id": "s037",
+    "ordinal": 37,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Stop before crossing the transverse line on the road and ensure the way is clear before entering a major road",
+    "images": [
+      "601.1.jpg"
+    ]
+  },
+  {
+    "id": "s038",
+    "ordinal": 38,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Give way to traffic on the major road",
+    "images": [
+      "602.jpg"
+    ]
+  },
+  {
+    "id": "s039",
+    "ordinal": 39,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Proceed in the direction indicated by the arrow",
+    "images": [
+      "606.jpg"
+    ]
+  },
+  {
+    "id": "s040",
+    "ordinal": 40,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Turn left ahead (right if symbol reversed)",
+    "images": [
+      "609.jpg"
+    ]
+  },
+  {
+    "id": "s041",
+    "ordinal": 41,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Keep left (right if symbol reversed)",
+    "images": [
+      "610.jpg"
+    ]
+  },
+  {
+    "id": "s042",
+    "ordinal": 42,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Mini-roundabout (give way to traffic from the immediate right)",
+    "images": [
+      "611.1.jpg"
+    ]
+  },
+  {
+    "id": "s043",
+    "ordinal": 43,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "Vehicles may pass either side to reach the same destination",
+    "images": [
+      "611.jpg"
+    ]
+  },
+  {
+    "id": "s044",
+    "ordinal": 44,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No right turn",
+    "images": [
+      "612.jpg"
+    ]
+  },
+  {
+    "id": "s045",
+    "ordinal": 45,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No U-turn",
+    "images": [
+      "614.jpg"
+    ]
+  },
+  {
+    "id": "s046",
+    "ordinal": 46,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No entry for vehicular traffic",
+    "images": [
+      "616.jpg"
+    ]
+  },
+  {
+    "id": "s047",
+    "ordinal": 47,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No vehicles except pedal cycles being pushed by hand",
+    "images": [
+      "617.jpg"
+    ]
+  },
+  {
+    "id": "s048",
+    "ordinal": 48,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No motor vehicles",
+    "images": [
+      "619.jpg"
+    ]
+  },
+  {
+    "id": "s049",
+    "ordinal": 49,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No goods vehicles over maximum gross weight shown in tonnes",
+    "images": [
+      "622.1A.jpg"
+    ]
+  },
+  {
+    "id": "s050",
+    "ordinal": 50,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No vehicles over maximum width shown",
+    "images": [
+      "629.jpg"
+    ]
+  },
+  {
+    "id": "s051",
+    "ordinal": 51,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "No overtaking",
+    "images": [
+      "632.jpg"
+    ]
+  },
+  {
+    "id": "s052",
+    "ordinal": 52,
+    "category": "Regulatory Signs",
+    "group": "regulatory",
+    "meaning": "One-way traffic",
+    "images": [
+      "652.jpg"
+    ]
+  },
+  {
+    "id": "s053",
+    "ordinal": 53,
+    "category": "Speed Limit Signs",
+    "group": "regulatory",
+    "meaning": "The maximum speed, in miles per hour, at which traffic may travel, if it is safe to do so",
+    "images": [
+      "670V30.jpg"
+    ]
+  },
+  {
+    "id": "s054",
+    "ordinal": 54,
+    "category": "Speed Limit Signs",
+    "group": "regulatory",
+    "meaning": "The national speed limit for the type of road and class of traffic applies",
+    "images": [
+      "671.jpg"
+    ]
+  },
+  {
+    "id": "s055",
+    "ordinal": 55,
+    "category": "Speed Limit Signs",
+    "group": "regulatory",
+    "meaning": "Minimum speed permitted, in miles per hour, unless it is impracticable or unsafe to comply",
+    "images": [
+      "672.jpg"
+    ]
+  },
+  {
+    "id": "s056",
+    "ordinal": 56,
+    "category": "Speed Limit Signs",
+    "group": "regulatory",
+    "meaning": "End of minimum speed requirement",
+    "images": [
+      "673v40.jpg"
+    ]
+  },
+  {
+    "id": "s057",
+    "ordinal": 57,
+    "category": "Speed Limit Signs",
+    "group": "regulatory",
+    "meaning": "End of 20 mph zone and start of 30 mph speed limit",
+    "images": [
+      "675.jpg"
+    ]
+  },
+  {
+    "id": "s058",
+    "ordinal": 58,
+    "category": "Speed Limit Signs",
+    "group": "regulatory",
+    "meaning": "Area in which cameras are used to enforce traffic regulations",
+    "images": [
+      "878.jpg"
+    ]
+  },
+  {
+    "id": "s059",
+    "ordinal": 59,
+    "category": "Low Bridge Signs",
+    "group": "warning",
+    "meaning": "No vehicles over the height shown may pass the sign (height shown in metric and imperial units)",
+    "images": [
+      "629.2A.jpg"
+    ]
+  },
+  {
+    "id": "s060",
+    "ordinal": 60,
+    "category": "Level Crossing Signs",
+    "group": "warning",
+    "meaning": "Level crossing with a gate or barrier",
+    "images": [
+      "770.jpg"
+    ]
+  },
+  {
+    "id": "s061",
+    "ordinal": 61,
+    "category": "Level Crossing Signs",
+    "group": "warning",
+    "meaning": "Level crossing without a gate or barrier",
+    "images": [
+      "771.jpg"
+    ]
+  },
+  {
+    "id": "s062",
+    "ordinal": 62,
+    "category": "Level Crossing Signs",
+    "group": "warning",
+    "meaning": "Advance warning of light signals at a level crossing with or without a gate or barrier",
+    "images": [
+      "773.jpg"
+    ]
+  },
+  {
+    "id": "s063",
+    "ordinal": 63,
+    "category": "Level Crossing Signs",
+    "group": "warning",
+    "meaning": "Open level crossing without gate or barrier",
+    "images": [
+      "774.jpg"
+    ]
+  },
+  {
+    "id": "s064",
+    "ordinal": 64,
+    "category": "Tram Signs",
+    "group": "warning",
+    "meaning": "Warning of trams crossing the road ahead",
+    "images": [
+      "772.jpg"
+    ]
+  },
+  {
+    "id": "s065",
+    "ordinal": 65,
+    "category": "Bus and Cycle Signs",
+    "group": "regulatory",
+    "meaning": "No through road for vehicular traffic",
+    "images": [
+      "816.jpg"
+    ]
+  },
+  {
+    "id": "s066",
+    "ordinal": 66,
+    "category": "Bus and Cycle Signs",
+    "group": "regulatory",
+    "meaning": "Pedal cycle route crossing or joining the road ahead",
+    "images": [
+      "950.jpg"
+    ]
+  },
+  {
+    "id": "s067",
+    "ordinal": 67,
+    "category": "Bus and Cycle Signs",
+    "group": "regulatory",
+    "meaning": "Route for use by buses, pedal cycles and taxis only",
+    "images": [
+      "953.jpg"
+    ]
+  },
+  {
+    "id": "s068",
+    "ordinal": 68,
+    "category": "Bus and Cycle Signs",
+    "group": "regulatory",
+    "meaning": "With-flow bus lane ahead that can also be used by pedal cycles and taxis. Hours of operation may be shown",
+    "images": [
+      "958.jpg"
+    ]
+  },
+  {
+    "id": "s069",
+    "ordinal": 69,
+    "category": "Bus and Cycle Signs",
+    "group": "regulatory",
+    "meaning": "Contraflow bus lane (the upward arrows indicate the number of traffic lanes available)",
+    "images": [
+      "960.jpg"
+    ]
+  },
+  {
+    "id": "s070",
+    "ordinal": 70,
+    "category": "Bus and Cycle Signs",
+    "group": "regulatory",
+    "meaning": "Bus lane on road at junction ahead",
+    "images": [
+      "962.jpg"
+    ]
+  },
+  {
+    "id": "s071",
+    "ordinal": 71,
+    "category": "On-street parking",
+    "group": "regulatory",
+    "meaning": "Waiting prohibited except for loading and unloading during the period indicated",
+    "images": [
+      "639NA.jpg"
+    ]
+  },
+  {
+    "id": "s072",
+    "ordinal": 72,
+    "category": "On-street parking",
+    "group": "regulatory",
+    "meaning": "No stopping on main carriageway",
+    "images": [
+      "642.jpg"
+    ]
+  },
+  {
+    "id": "s073",
+    "ordinal": 73,
+    "category": "On-street parking",
+    "group": "regulatory",
+    "meaning": "Free parking for all vehicles from Monday to Saturday between 8 am and 7 pm, with a 20-minute time limit (no limit outside those times)",
+    "images": [
+      "661.1.jpg"
+    ]
+  },
+  {
+    "id": "s074",
+    "ordinal": 74,
+    "category": "On-street parking",
+    "group": "regulatory",
+    "meaning": "Vehicles may be parked wholly on the verge or footway",
+    "images": [
+      "668.jpg"
+    ]
+  },
+  {
+    "id": "s075",
+    "ordinal": 75,
+    "category": "Traffic Calming",
+    "group": "regulatory",
+    "meaning": "Road narrows on both sides",
+    "images": [
+      "516.jpg"
+    ]
+  },
+  {
+    "id": "s076",
+    "ordinal": 76,
+    "category": "Traffic Calming",
+    "group": "regulatory",
+    "meaning": "Road narrows on right (left if symbol reversed)",
+    "images": [
+      "517.jpg"
+    ]
+  },
+  {
+    "id": "s077",
+    "ordinal": 77,
+    "category": "Traffic Calming",
+    "group": "regulatory",
+    "meaning": "Road hump or series of road humps ahead",
+    "images": [
+      "557.1.jpg"
+    ]
+  },
+  {
+    "id": "s078",
+    "ordinal": 78,
+    "category": "Traffic Calming",
+    "group": "regulatory",
+    "meaning": "Priority must be given to vehicles from the opposite direction",
+    "images": [
+      "615.jpg"
+    ]
+  },
+  {
+    "id": "s079",
+    "ordinal": 79,
+    "category": "Traffic Calming",
+    "group": "regulatory",
+    "meaning": "Traffic has priority over vehicles from the opposite direction",
+    "images": [
+      "811.jpg"
+    ]
+  },
+  {
+    "id": "s080",
+    "ordinal": 80,
+    "category": "Motorway Signs",
+    "group": "information",
+    "meaning": "Additional traffic lane joining from the left ahead in 200 yards. Traffic on the main carriageway has priority over joining traffic",
+    "images": [
+      "873+876.jpg"
+    ]
+  },
+  {
+    "id": "s081",
+    "ordinal": 81,
+    "category": "Motorway Signs",
+    "group": "information",
+    "meaning": "Sign located where the motorway ends on either the main carriageway or exit slip road",
+    "images": [
+      "2931.jpg"
+    ]
+  },
+  {
+    "id": "s082",
+    "ordinal": 82,
+    "category": "Motorway Signs",
+    "group": "information",
+    "meaning": "Drivers should keep a distance of at least two chevrons from the vehicle ahead",
+    "images": [
+      "2933.jpg"
+    ]
+  },
+  {
+    "id": "s083",
+    "ordinal": 83,
+    "category": "Motorway Signs",
+    "group": "information",
+    "meaning": "Temporary maximum speed advised for prevailing traffic conditions",
+    "images": [
+      "6001.jpg"
+    ]
+  },
+  {
+    "id": "s084",
+    "ordinal": 84,
+    "category": "Motorway Signs",
+    "group": "information",
+    "meaning": "Leave motorway at next exit",
+    "images": [
+      "6003.jpg"
+    ]
+  },
+  {
+    "id": "s085",
+    "ordinal": 85,
+    "category": "Motorway Signs",
+    "group": "information",
+    "meaning": "Light signal conveying the prohibition that vehicular traffic may not use the lane below the sign (gantry-mounted)",
+    "images": [
+      "6031.1.jpg"
+    ]
+  },
+  {
+    "id": "s086",
+    "ordinal": 86,
+    "category": "Direction and Tourist Signs",
+    "group": "information",
+    "meaning": "Additional traffic lanes joining from the right ahead. Traffic in the right hand lane joins the main carriageway. Traffic on the main carriageway has priority over joining traffic (primary route)",
+    "images": [
+      "874P.jpg"
+    ]
+  },
+  {
+    "id": "s087",
+    "ordinal": 87,
+    "category": "Direction and Tourist Signs",
+    "group": "information",
+    "meaning": "Direction to tourist attraction indicated by a symbol",
+    "images": [
+      "2208.jpg"
+    ]
+  },
+  {
+    "id": "s088",
+    "ordinal": 88,
+    "category": "Direction and Tourist Signs",
+    "group": "information",
+    "meaning": "Direction to services",
+    "images": [
+      "2313.2.jpg"
+    ]
+  },
+  {
+    "id": "s089",
+    "ordinal": 89,
+    "category": "Information Signs",
+    "group": "information",
+    "meaning": "Direction to emergency exit for pedestrians from a tunnel",
+    "images": [
+      "2711.jpg"
+    ]
+  },
+  {
+    "id": "s090",
+    "ordinal": 90,
+    "category": "Road Works and Temporary",
+    "group": "warning",
+    "meaning": "Road works or temporary obstruction of the carriageway ahead",
+    "images": [
+      "7001.jpg"
+    ]
+  },
+  {
+    "id": "s091",
+    "ordinal": 91,
+    "category": "Road Works and Temporary",
+    "group": "warning",
+    "meaning": "Loose chippings on road ahead",
+    "images": [
+      "7009.jpg"
+    ]
+  },
+  {
+    "id": "s092",
+    "ordinal": 92,
+    "category": "Road Works and Temporary",
+    "group": "warning",
+    "meaning": "Temporary sudden change in level of carriageway surface",
+    "images": [
+      "7013.jpg"
+    ]
+  },
+  {
+    "id": "s093",
+    "ordinal": 93,
+    "category": "Road Works and Temporary",
+    "group": "warning",
+    "meaning": "Traffic signals not in use",
+    "images": [
+      "7019.jpg"
+    ]
+  },
+  {
+    "id": "s094",
+    "ordinal": 94,
+    "category": "Miscellaneous",
+    "group": "information",
+    "meaning": "Other danger ahead. Plate beneath indicates the nature of the hazard",
+    "images": [
+      "562.jpg"
+    ]
+  },
+  {
+    "id": "s095",
+    "ordinal": 95,
+    "category": "Merge Images",
+    "group": "information",
+    "meaning": "Countdown markers indicate the distance to the start of the deceleration lane. Each bar represents about 100 yards",
+    "images": [
+      "823.jpg",
+      "824.jpg",
+      "825.jpg"
+    ]
+  },
+  {
+    "id": "s096",
+    "ordinal": 96,
+    "category": "Merge Images",
+    "group": "warning",
+    "meaning": "Distance to 'Give Way' line ahead",
+    "images": [
+      "501.jpg",
+      "503.jpg"
+    ]
+  },
+  {
+    "id": "s097",
+    "ordinal": 97,
+    "category": "Merge Images",
+    "group": "warning",
+    "meaning": "Maximum speed advised, in miles per hour, at a bend (the plate may be used with other warning signs)",
+    "images": [
+      "512.jpg",
+      "513.2.jpg"
+    ]
+  },
+  {
+    "id": "s098",
+    "ordinal": 98,
+    "category": "Merge Images",
+    "group": "warning",
+    "meaning": "Pedestrians in road for distance shown",
+    "images": [
+      "544.1.jpg",
+      "547.3.jpg"
+    ]
+  },
+  {
+    "id": "s099",
+    "ordinal": 99,
+    "category": "Merge Images",
+    "group": "regulatory",
+    "meaning": "Entrance to a controlled parking zone",
+    "images": [
+      "663.jpg"
+    ]
+  },
+  {
+    "id": "s100",
+    "ordinal": 100,
+    "category": "Merge Images",
+    "group": "regulatory",
+    "meaning": "End of controlled or voucher parking zone",
+    "images": [
+      "664.jpg"
+    ]
+  },
+  {
+    "id": "s101",
+    "ordinal": 101,
+    "category": "Merge Images",
+    "group": "warning",
+    "meaning": "Electrified overhead cable and the safe height beneath it (usually associated with an overhead electrified railway or tramway)",
+    "images": [
+      "779.jpg",
+      "780A.jpg"
+    ]
+  }
+]

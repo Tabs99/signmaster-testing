@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, DASHBOARD_HEADING } from './helpers/dashboardFixture'
 import {
   mockGoogleOAuthAuthorizeReturn,
   mockSupabaseAuthBootstrap,
@@ -12,7 +12,7 @@ import {
 const GOOGLE_EMAIL = 'google-oauth-e2e-fixture@example.invalid'
 const ORDER_ID = '205-1234567-1234567'
 const ORDER_DIGITS = '2051234567123456'
-const ACCESS_TEXT = 'SignMaster access is active.'
+const ACCESS_TEXT = DASHBOARD_HEADING
 const B10_HEADING = 'Finish activating SignMaster'
 
 function mockVerifyEligible(page: Page) {

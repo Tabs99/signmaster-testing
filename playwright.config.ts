@@ -51,6 +51,15 @@ export default defineConfig({
       VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
       VITE_SUPABASE_ANON_KEY:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
+      // The dev server runs the real `api/` handlers, so these pin the
+      // server side at a local address that nothing is listening on. Every
+      // backend call in these specs is mocked with `page.route`; if one is ever
+      // missed, the handler fails to connect instead of reaching a real
+      // database. These must stay set even when `.env.local` points at a
+      // hosted project — the dev plugin leaves anything already in the
+      // environment alone.
+      SUPABASE_URL: 'http://127.0.0.1:54321',
+      SUPABASE_SECRET_KEY: 'e2e-placeholder-never-valid',
     },
   },
 })

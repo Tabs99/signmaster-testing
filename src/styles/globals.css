@@ -67,15 +67,20 @@
   }
 
   .keyline-cta {
-    @apply flex h-[52px] w-full items-center justify-center rounded-md border-0 font-sans text-[15px] font-bold leading-none transition-[background-color,transform] duration-150;
+    @apply flex h-[52px] w-full items-center justify-center rounded-md border-0 font-sans text-[15px] font-bold leading-none transition-[background-color,transform,box-shadow] duration-150 ease-out;
   }
 
+  /*
+   * Hover lifts the button a pixel and gives it a soft gold glow; press drops
+   * it back and darkens it. Small enough to read as response rather than
+   * animation, and the global reduced-motion rule collapses the transition.
+   */
   .keyline-cta-enabled {
-    @apply bg-keyline-gold text-keyline-gold-foreground active:scale-[0.99] active:bg-keyline-gold-pressed;
+    @apply cursor-pointer bg-keyline-gold text-keyline-gold-foreground active:translate-y-0 active:scale-[0.99] active:bg-keyline-gold-pressed active:shadow-none;
   }
 
   .keyline-cta-enabled:hover:not(:disabled) {
-    @apply bg-[#edb945];
+    @apply -translate-y-px bg-[#edb945] shadow-[0_6px_18px_-6px_rgba(233,178,60,0.55)];
   }
 
   .keyline-cta-disabled {
@@ -83,10 +88,10 @@
   }
 
   .keyline-text-action {
-    @apply inline-flex min-h-11 items-center border-0 bg-transparent p-0 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] transition-opacity hover:opacity-[0.85];
+    @apply inline-flex min-h-11 cursor-pointer items-center border-0 bg-transparent p-0 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] transition-[opacity,text-decoration-color] duration-150 hover:opacity-[0.85] hover:decoration-white active:opacity-70;
   }
 
   .keyline-support-action {
-    @apply inline-flex min-h-11 items-center border-0 bg-transparent px-1 py-2 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] keyline-focus transition-opacity hover:opacity-[0.85];
+    @apply inline-flex min-h-11 cursor-pointer items-center border-0 bg-transparent px-1 py-2 font-sans text-[13px] font-semibold text-white underline decoration-white/45 underline-offset-[3px] keyline-focus transition-[opacity,text-decoration-color] duration-150 hover:opacity-[0.85] hover:decoration-white active:opacity-70;
   }
 }

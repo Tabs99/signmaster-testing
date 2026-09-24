@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './helpers/dashboardFixture'
 import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
 import {
   expectProgressiveAccountSetupOnActivate,
@@ -141,7 +141,10 @@ test.describe('SignMaster activation verification', () => {
     let requestCount = 0
     await page.route('**/api/activation/verify', async (route) => {
       requestCount += 1
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Long enough that the second click below lands well inside the in-flight
+      // window even when the machine is busy. At 500ms this raced the state
+      // change and failed intermittently under a parallel run.
+      await new Promise((resolve) => setTimeout(resolve, 3000))
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

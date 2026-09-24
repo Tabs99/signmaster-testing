@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './helpers/dashboardFixture'
 import {
   mockSupabaseAuthBootstrap,
   mockSupabaseSignInSuccess,
@@ -140,7 +140,7 @@ test.describe('SignMaster activation completion', () => {
     // Finalisation navigates straight into the app — the user is NOT parked on
     // a second redundant "Your SignMaster access is active" success screen.
     await expect(page).toHaveURL(/\/app$/)
-    await expect(page.getByTestId('app-access')).toBeVisible()
+    await expect(page.getByTestId('dashboard-first-run')).toBeVisible()
     await expect(page.getByText('Your SignMaster access is active')).toHaveCount(0)
     expect(completeCounter.count).toBe(1)
   })
@@ -164,7 +164,7 @@ test.describe('SignMaster activation completion', () => {
     await page.getByRole('button', { name: 'Continue' }).click()
 
     await expect(page).toHaveURL(/\/app$/)
-    await expect(page.getByTestId('app-access')).toBeVisible()
+    await expect(page.getByTestId('dashboard-first-run')).toBeVisible()
     expect(completeCounter.count).toBe(1)
   })
 

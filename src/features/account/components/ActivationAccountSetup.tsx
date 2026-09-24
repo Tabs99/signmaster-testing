@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import PageShell from '../../../components/layout/PageShell'
 import BrandLockup from '../../activation/components/BrandLockup'
 import {
@@ -157,6 +157,7 @@ export default function ActivationAccountSetup({
   onSignIn,
   onRestartActivation,
   onEnterApp,
+  onActivatedChange,
   verifiedOrderId,
 }: ActivationAccountSetupProps) {
   const internalContextResolution = useActivationContextResolution({
@@ -233,6 +234,11 @@ export default function ActivationAccountSetup({
     ready: claimReady,
   })
   const claimActive = claimState.kind !== 'idle'
+  const activated = claimState.kind === 'outcome' && claimState.outcome === 'success'
+
+  useEffect(() => {
+    onActivatedChange?.(activated)
+  }, [activated, onActivatedChange])
   const pendingClaimStart =
     resumeState === 'valid_context_confirmed_auth' && claimState.kind === 'idle'
   const contextAllowsAccountCreation =

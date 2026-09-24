@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, DASHBOARD_HEADING } from './helpers/dashboardFixture'
 import {
   mockSupabaseAuthBootstrap,
   mockSupabaseSignInSuccess,
@@ -8,7 +8,7 @@ import {
 
 const APP_EMAIL = 'protected-e2e-fixture@example.invalid'
 const APP_PASSWORD = 'Secure123!'
-const ACCESS_TEXT = 'SignMaster access is active.'
+const ACCESS_TEXT = DASHBOARD_HEADING
 const B10_HEADING = 'Finish activating SignMaster'
 
 /**

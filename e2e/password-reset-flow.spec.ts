@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, DASHBOARD_HEADING } from './helpers/dashboardFixture'
 import {
   buildRecoveryHash,
   mockSupabaseAuthBootstrap,
@@ -119,7 +119,7 @@ test.describe('SignMaster password reset', () => {
     await page.getByRole('button', { name: 'Continue' }).click()
 
     await expect(page).toHaveURL(/\/app$/)
-    await expect(page.getByText('SignMaster access is active.')).toBeVisible()
+    await expect(page.getByRole('heading', { name: DASHBOARD_HEADING })).toBeVisible()
     await expect(
       page.getByRole('heading', { name: 'Finish activating SignMaster' }),
     ).toHaveCount(0)

@@ -23,6 +23,18 @@ export default {
           DEFAULT: '#5FB783',
           text: '#8FD3AA',
         },
+        // Dashboard accents, matched to the client's dashboard mock, which is
+        // more saturated than the activation palette. Every one clears WCAG AA
+        // as text on the pane colour (blue 7.2, green 10.5, red 6.6,
+        // violet 6.7). Used only on the dashboard; the quiz keeps the
+        // approved semantic tokens above.
+        dash: {
+          blue: '#60A5FA',
+          green: '#4ADE80',
+          red: '#F87171',
+          violet: '#A78BFA',
+          gold: '#E9B23C',
+        },
         info: {
           DEFAULT: '#5B9BD5',
           text: '#9CC5EB',

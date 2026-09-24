@@ -217,7 +217,7 @@ testing. Credentials are **not** required for a normal local stack (email/passwo
 so on).
 
 The Supabase CLI substitutes `env(...)` in `config.toml` only from a **project-root `.env` file**
-and/or exported shell variables — **not** from `.env.local` (which `npm run dev:full` uses). If OAuth
+and/or exported shell variables — **not** from `.env.local` (which the dev server loads). If OAuth
 vars are missing at `supabase start`, authorize URLs contain the literal text `env(SUPABASE_AUTH_EXTERNAL_...)`,
 which produces Google `401 invalid_client` and Apple `403`.
 
@@ -288,24 +288,37 @@ users.
 
 ## Starting the application locally
 
-There are two local run modes. **They are not equivalent** — `/api/*` routes only run in the
-full-stack mode.
+`npm run dev` serves the whole app, `/api/*` included.
 
-| Command | What it serves | Serves `/api/*`? | Needs local Supabase? |
+| Command | What it serves | Serves `/api/*`? | Needs a Vercel login? |
 |---------|----------------|------------------|-----------------------|
-| `npm run dev` | Vite frontend only, port **4200** | ❌ No | Depends on the work (see below) |
-| `npm run dev:full` | Full stack via Vercel CLI, port **4200** | ✅ Yes | Yes |
+| `npm run dev` | Frontend + `api/` handlers, port **4200** | ✅ Yes | ❌ No |
+| `npm run dev:full` | Same, through the Vercel CLI, port **4200** | Only when the project is linked | Yes, to be useful |
 
-`npm run dev` serves the frontend only and never serves `/api/*`. Whether it needs local Supabase
-depends on what you are doing:
+A Vite plugin ([`server/dev/apiRoutesPlugin.ts`](./server/dev/apiRoutesPlugin.ts)) maps each file
+under `api/` onto its route and runs the real handler, so `npm run dev` behaves like production.
+It also loads `.env.local` into `process.env`, which Vite does not do on its own, because the
+handlers read `SUPABASE_URL` and `SUPABASE_SECRET_KEY` from there. Variables already set in the
+environment are left alone, so a caller can point the server somewhere else — which is how the
+Playwright suite pins the backend at a dead address it can never reach.
+
+`npm run dev:full` runs the same app through `vercel dev`. Without `vercel link` it passes straight
+through to Vite and does **not** build the `api/` functions itself, so there is no reason to prefer
+it until the project is linked to a Vercel account.
+
+Which Supabase you need depends on the work:
 
 - **Pure / mock frontend work** (styling, layout, component behaviour, and the Playwright E2E suite,
-  which mocks every API and Supabase Auth call) → **local Supabase is not required.**
-- **Real auth testing** (actual sign-up, sign-in, password recovery, or any real Supabase Auth
-  flow) → **local Supabase is required**, and `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` must
-  point at it (`npx supabase start`, values from `npx supabase status`).
-- **Real `/api/*` backend testing** → use **`npm run dev:full`** (frontend + serverless routes),
-  which also requires local Supabase and reads server secrets from `.env.local`.
+  which mocks every API and Supabase Auth call) → **no Supabase is required.**
+- **Real auth or backend testing** → point `.env.local` at a Supabase project. Either a local stack
+  (`npx supabase start`, which needs Docker) or a hosted one:
+
+  ```bash
+  npm run env:hosted -- <project-ref>
+  ```
+
+  That rewrites only the four Supabase variables, backs up the previous file, and prints no keys.
+  Remember that a hosted project holds real accounts and real orders.
 
 ### Quick start (from a fresh clone)
 
@@ -317,31 +330,27 @@ npm ci
 # 1. Configure environment
 cp .env.example .env.local
 
-# 2. Start local Supabase (Docker required) and copy the printed URLs/keys into .env.local
-npx supabase start
+# 2. Point .env.local at a Supabase project — either a local stack:
+npx supabase start             # needs Docker
 npx supabase db reset          # apply migrations to a clean DB
 
-# 3a. Frontend only (no /api/* routes)
-npm run dev                    # http://localhost:4200
+#    ...or a hosted project, if Docker is not available:
+npm run env:hosted -- <project-ref>
 
-# 3b. OR full stack (frontend + /api/* via Vercel CLI)
-npm run dev:full               # http://localhost:4200
+# 3. Start the app, /api/* included
+npm run dev                    # http://localhost:4200
 ```
 
-Both modes serve the app at **http://localhost:4200** (Vite uses `strictPort`, so port 4200 must be
-free). No separate proxy is configured; a single process serves the app in each mode.
-
-> Note: `npm run dev:full` requires Docker (for Supabase) and a populated `.env.local`. It was not
-> executed inside the documentation sandbox because Docker is unavailable there; the command and its
-> wiring are taken directly from [`package.json`](./package.json) and
-> [`.env.example`](./.env.example).
+The app is served at **http://localhost:4200** (Vite uses `strictPort`, so port 4200 must be free).
+No separate proxy is configured; one process serves the frontend and the API routes together.
 
 ---
 
 ## Recommended local workflow
 
-1. `npx supabase start` (once per session; Docker running).
-2. `npm run dev:full` for full-stack work, or `npm run dev` for pure UI work.
+1. Point `.env.local` at a Supabase project — `npx supabase start` locally, or
+   `npm run env:hosted -- <project-ref>` for a hosted one.
+2. `npm run dev`, which serves the frontend and the `api/` routes together.
 3. Make a small, scoped change.
 4. Run focused tests (e.g. `npm run test:run` for the affected area, `npm run test:e2e` for flows).
 5. Before opening a PR: `npm run test:run`, `npm run build`, focused Playwright where relevant,
@@ -364,7 +373,7 @@ free). No separate proxy is configured; a single process serves the app in each 
 
 ### What the E2E suite does
 
-- **Starts the app automatically.** Playwright's `webServer` runs `npm run dev` (Vite frontend only)
+- **Starts the app automatically.** Playwright's `webServer` runs `npm run dev`
   on port 4200.
 - **Mocks all `/api/*` and Supabase Auth endpoints.** E2E does **not** require local Supabase or the
   full-stack server.
@@ -497,7 +506,7 @@ server-side; the browser uses the anon key and cannot read order or sync tables.
 
 ## API overview
 
-All routes live under `api/` and are served locally by `npm run dev:full`.
+All routes live under `api/` and are served locally by `npm run dev`.
 
 | Method | Route | Purpose |
 |--------|-------|---------|
@@ -582,7 +591,7 @@ Do not place production secrets in this repository.
 |---------|--------------------|
 | `npm ci` fails | Use Node 24+ locally (CI uses 24 LTS); run `npm ci` on your host OS after Docker installs (Rollup native binaries are platform-specific). |
 | Supabase will not start | Docker is not running, or ports 54321–54324 are busy. Start Docker; `npx supabase stop` then `start`. |
-| App loads but API calls fail | You are running `npm run dev` (frontend only). Use `npm run dev:full` for `/api/*`. |
+| App loads but API calls fail | Check the terminal: the dev server logs `[api] … failed` with the reason. Usually `.env.local` is missing or points at a Supabase that is not running. |
 | API routes return 500 (service errors) | `SUPABASE_SECRET_KEY` missing/incorrect in `.env.local`. |
 | Local auth fails | Check `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` match `npx supabase status` output. |
 | Migrations fail | Fix migration SQL, then `npx supabase db reset`. |
@@ -599,8 +608,8 @@ Do not place production secrets in this repository.
 | Install dependencies | `npm ci` |
 | Start local database | `npx supabase start` |
 | Reset / migrate database | `npx supabase db reset` |
-| Start app (frontend only) | `npm run dev` |
-| Start app (full stack, `/api/*`) | `npm run dev:full` |
+| Start app (frontend + `/api/*`) | `npm run dev` |
+| Point `.env.local` at a hosted Supabase | `npm run env:hosted -- <project-ref>` |
 | Unit / component / server tests | `npm run test:run` |
 | End-to-end tests | `npm run test:e2e` |
 | Production build | `npm run build` |

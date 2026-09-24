@@ -28,6 +28,19 @@ vi.mock('../lib/supabase/client', () => ({
 }))
 
 describe('App', () => {
+  it('serves the landing page at /', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: /master the road/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('landing-activate')).toBeInTheDocument()
+  })
+
   it('renders the activation Step 1 screen at /activate', async () => {
     render(
       <MemoryRouter initialEntries={['/activate']}>
@@ -78,6 +91,19 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sign in to SignMaster' }),
     ).toBeInTheDocument()
-    expect(screen.queryByText('SignMaster access is active.')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-first-run')).not.toBeInTheDocument()
+  })
+
+  it('guards /app/quiz/play the same way as the dashboard', async () => {
+    render(
+      <MemoryRouter initialEntries={['/app/quiz/play']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in to SignMaster' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('quiz-counter')).not.toBeInTheDocument()
   })
 })

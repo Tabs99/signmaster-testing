@@ -1,13 +1,16 @@
 import { useCallback } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Route, Routes, useNavigate } from 'react-router-dom'
 import CreateAccountScreen from './features/account/components/CreateAccountScreen'
+import DashboardScreen from './features/dashboard/components/DashboardScreen'
+import LandingScreen from './features/landing/components/LandingScreen'
+import QuizScreen from './features/quiz/components/QuizScreen'
+import QuizHomeScreen from './features/quiz/components/QuizHomeScreen'
 import SignInScreen from './features/account/components/SignInScreen'
 import ForgotPasswordScreen from './features/account/components/ForgotPasswordScreen'
 import ResetPasswordScreen from './features/account/components/ResetPasswordScreen'
 import ActivationStep1 from './features/activation/components/ActivationStep1'
 import ActivationContinueScreen from './features/activation/components/ActivationContinueScreen'
 import ProtectedRoute from './features/routing/components/ProtectedRoute'
-import AppAccessScreen from './features/routing/components/AppAccessScreen'
 import { AuthProvider } from './features/auth/context/AuthProvider'
 
 function AppRoutes() {
@@ -21,7 +24,13 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/activate" replace />} />
+      {/*
+        `/` used to redirect straight to activation. It now serves the public
+        landing page, which is the only change this feature makes to existing
+        behaviour. `/activate` is untouched, so the QR printed on the cards —
+        https://signmastercards.co.uk/activate — is unaffected.
+      */}
+      <Route path="/" element={<LandingScreen />} />
       <Route
         path="/activate"
         element={
@@ -71,7 +80,23 @@ function AppRoutes() {
         path="/app"
         element={
           <ProtectedRoute>
-            <AppAccessScreen />
+            <DashboardScreen />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/app/quiz"
+        element={
+          <ProtectedRoute>
+            <QuizHomeScreen />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/app/quiz/play"
+        element={
+          <ProtectedRoute>
+            <QuizScreen />
           </ProtectedRoute>
         }
       />

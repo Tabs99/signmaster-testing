@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './helpers/dashboardFixture'
 
 test.describe('Amazon order ID key repeat', () => {
   test('keydown repeat events enter repeated digits', async ({ page }) => {

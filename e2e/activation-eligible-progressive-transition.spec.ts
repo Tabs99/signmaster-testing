@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './helpers/dashboardFixture'
 import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
 import { expectProgressiveAccountSetupOnActivate } from './helpers/progressiveActivation'
 

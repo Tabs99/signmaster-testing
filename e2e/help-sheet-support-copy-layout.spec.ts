@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './helpers/dashboardFixture'
 import { mockSupabaseAuthBootstrap } from './helpers/supabaseMock'
 
 const EDGE_TOLERANCE_PX = 2

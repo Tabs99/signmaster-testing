@@ -64,6 +64,7 @@ export default function ActivationStep1({
 
   const [orderId, setOrderId] = useState('')
   const [accountSetupUnlocked, setAccountSetupUnlocked] = useState(false)
+  const [activated, setActivated] = useState(false)
   const [autoVerifyEligible, setAutoVerifyEligible] = useState(false)
   const [orderIdSourceWithinLimit, setOrderIdSourceWithinLimit] = useState(true)
   const [fieldTouched, setFieldTouched] = useState(false)
@@ -492,6 +493,7 @@ export default function ActivationStep1({
               onSignIn={onSignIn}
               onRestartActivation={handleUseAnotherOrder}
               onEnterApp={onEnterApp}
+              onActivatedChange={setActivated}
             />
           ) : isInitialContextRestoring ? (
             <div
@@ -576,7 +578,13 @@ export default function ActivationStep1({
           )}
         </KeylinePlate>
 
-        {accountSetupUnlocked ? (
+        {/*
+          Before the claim, "Use another order" is a genuine way out — wrong
+          order, wrong deck, a typo. Once the entitlement is claimed it only
+          suggests the activation might not have taken, so the support line
+          every other state carries takes its place.
+        */}
+        {accountSetupUnlocked && !activated ? (
           <p className="mt-4 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:mt-2">
             <button
               type="button"
@@ -586,14 +594,14 @@ export default function ActivationStep1({
               Use another order
             </button>
           </p>
-        ) : (
+        ) : !accountSetupUnlocked ? (
           <p className="mt-4 text-xs leading-[1.55] text-white/[0.5] max-[667px]:mt-2">
             Your order number is used only to verify your purchase and manage your SignMaster
             access.
           </p>
-        )}
+        ) : null}
 
-        {!accountSetupUnlocked ? (
+        {!accountSetupUnlocked || activated ? (
           <p className="mt-auto pt-6 text-center text-[13px] leading-[1.55] text-white/[0.55] max-[667px]:pt-2 lg:pt-8 lg:text-left">
             Need help with activation?{' '}
             <button

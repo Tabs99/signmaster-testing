@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, DASHBOARD_HEADING } from './helpers/dashboardFixture'
 import { mockSupabaseAuthBootstrap, seedConfirmedSession } from './helpers/supabaseMock'
 import {
   expectProgressiveAccountSetupOnActivate,
@@ -12,7 +12,7 @@ const FIXTURE_ORDER_ID_RAW_17 = '20512345671234567'
 const CONTEXT_COOKIE_NAME = 'sm_activation_ctx'
 const CONTEXT_TOKEN_VALUE = 'opaque-privacy-test-token'
 const APP_EMAIL = 'privacy-e2e-fixture@example.invalid'
-const ACCESS_TEXT = 'SignMaster access is active.'
+const ACCESS_TEXT = DASHBOARD_HEADING
 
 function mockVerifyEligible(page: Page) {
   return page.route('**/api/activation/verify', async (route) => {
