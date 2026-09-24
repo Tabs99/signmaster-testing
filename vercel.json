@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "server/content/signs.json"
+    }
+  },
   "rewrites": [
     {
       "source": "/((?!api/|src/|@vite|@react-refresh|@id|node_modules|assets|vite\\.svg).*)",
